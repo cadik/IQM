@@ -4,6 +4,7 @@ namespace IQM {
     IQM::Args::Args(unsigned argc, char *argv[]) {
         bool parsed_method = false;
         bool parsed_input = false;
+        bool parsed_reference = false;
 
         for (unsigned i = 0; i < argc; i++) {
             if ((i + 1) < argc) {
@@ -15,6 +16,9 @@ namespace IQM {
                 } else if (strcmp(argv[i], "--input") == 0) {
                     this->input_path = std::string(argv[i + 1]);
                     parsed_input = true;
+                } else if (strcmp(argv[i], "--ref") == 0) {
+                    this->input_path = std::string(argv[i + 1]);
+                    parsed_reference = true;
                 }
             }
         }
@@ -24,6 +28,9 @@ namespace IQM {
         }
         if (!parsed_input) {
             throw std::runtime_error("missing input");
+        }
+        if (!parsed_reference) {
+            throw std::runtime_error("missing reference");
         }
     }
 }
