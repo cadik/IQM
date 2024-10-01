@@ -11,6 +11,7 @@ namespace IQM {
         Args(unsigned argc, char* argv[]);
         Method method;
         std::string input_path;
+        std::string ref_path;
     };
 }
 

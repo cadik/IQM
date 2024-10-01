@@ -17,7 +17,7 @@ namespace IQM {
                     this->input_path = std::string(argv[i + 1]);
                     parsed_input = true;
                 } else if (strcmp(argv[i], "--ref") == 0) {
-                    this->input_path = std::string(argv[i + 1]);
+                    this->ref_path = std::string(argv[i + 1]);
                     parsed_reference = true;
                 }
             }

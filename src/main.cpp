@@ -1,5 +1,6 @@
 #include <iostream>
 #include "args.h"
+#include "cpu/ssim_ref.h"
 #include <opencv2/opencv.hpp>
 
 int main(int argc, char** argv) {
@@ -7,16 +8,13 @@ int main(int argc, char** argv) {
     std::cout << "Selected method: " << IQM::method_name(args.method) << std::endl;
 
     cv::Mat image = imread(args.input_path, cv::IMREAD_COLOR);
-    cv::Mat blurred;
+    cv::Mat ref = imread(args.ref_path, cv::IMREAD_COLOR);
 
-    cv::GaussianBlur(image, blurred, cv::Size{45, 45}, 0.0);
+    auto method = IQM::CPU::SSIM_Reference();
+    auto out = method.computeMetric(image, ref);
 
-    if (!image.data) {
-        printf("No image data \n");
-        return -1;
-    }
     namedWindow("Display Image", cv::WINDOW_AUTOSIZE);
-    imshow("Display Image", blurred);
+    imshow("Display Image", out);
 
     cv::waitKey(0);
     return 0;
