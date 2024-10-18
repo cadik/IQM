@@ -9,7 +9,7 @@ namespace IQM {
         SSIM_CPU = 0,
     };
 
-    std::string method_name(Method &method);
+    std::string method_name(const Method &method);
 };
 
 #endif //IQM_METHODS_H

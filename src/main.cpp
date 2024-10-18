@@ -1,7 +1,12 @@
 #include <iostream>
+#include <chrono>
+
+#include <opencv2/opencv.hpp>
+
 #include "args.h"
 #include "cpu/ssim_ref.h"
-#include <opencv2/opencv.hpp>
+#include "gpu/ssim.h"
+#include "gpu/base/vulkan_runtime.h"
 
 int main(int argc, char** argv) {
     auto args = IQM::Args(argc, argv);
@@ -13,9 +18,18 @@ int main(int argc, char** argv) {
     auto method = IQM::CPU::SSIM_Reference();
     auto out = method.computeMetric(image, ref);
 
-    namedWindow("Display Image", cv::WINDOW_AUTOSIZE);
-    imshow("Display Image", out);
+    IQM::GPU::VulkanRuntime vulkan;
+    IQM::GPU::SSIM ssim(vulkan);
 
-    cv::waitKey(0);
+    auto start = std::chrono::high_resolution_clock::now();
+
+    ssim.computeMetric(vulkan);
+
+    auto end = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double, std::milli> ms_double = end - start;
+    std::cout << ms_double << std::endl;
+
+    cv::imwrite("out.png", out);
     return 0;
 }
