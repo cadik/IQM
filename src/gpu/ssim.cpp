@@ -15,12 +15,22 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
 
     this->descSet = std::move(vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo}.front());
 
+    // 1x int - kernel size
+    // 3x float - K_1, K_2, sigma
+    std::vector ranges {
+        vk::PushConstantRange {
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            .offset = 0,
+            .size = sizeof(int) * 1 + sizeof(float) * 3,
+        }
+    };
+
     vk::PipelineLayoutCreateInfo layoutInfo = {
         .flags = {},
         .setLayoutCount = 1,
         .pSetLayouts = layouts.data(),
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = {},
+        .pushConstantRangeCount = 1,
+        .pPushConstantRanges = ranges.data(),
     };
 
     this->layout = runtime.createPipelineLayout(layoutInfo);
@@ -35,6 +45,14 @@ cv::Mat IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
 
     runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
     runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
+
+    std::array values = {
+        this->kernelSize,
+        *reinterpret_cast<int *>(&this->k_1),
+        *reinterpret_cast<int *>(&this->k_2),
+        *reinterpret_cast<int *>(&this->sigma)
+    };
+    runtime._cmd_buffer.pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
 
     //shader works in 16x16 tiles
     constexpr unsigned tileSize = 16;

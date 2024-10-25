@@ -51,10 +51,10 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         for (const auto& queueFamily : queueFamilyProperties) {
             if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
                 computeQueueIndex = i;
+                break;
             }
 
             i++;
-            break;
         }
 
         std::cout << "Selected device: "<< properties.deviceName << std::endl;

@@ -10,6 +10,7 @@ namespace IQM::CPU {
         int kernelSize = 11;
         float k_1 = 0.01;
         float k_2 = 0.03;
+        float sigma = 1.5;
     };
 }
 
