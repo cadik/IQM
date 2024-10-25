@@ -2,7 +2,7 @@
 
 cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::Mat& reference) const {
     auto kernel = cv::Size{this->kernelSize, this->kernelSize};
-    auto l = 255.0;
+    auto l = 1.0;
     auto sigma = 1.5;
 
     auto c_1 = pow(this->k_1 * l, 2);
