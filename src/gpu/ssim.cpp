@@ -141,6 +141,14 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     stgBuf.bindMemory(stgMem, 0);
     stgRefBuf.bindMemory(stgRefMem, 0);
 
+    void * inBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * 4, {});
+    memcpy(inBufData, image.data, this->imageParameters.height * this->imageParameters.width * 4);
+    stgMem.unmapMemory();
+
+    inBufData = stgRefMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * 4, {});
+    memcpy(inBufData, ref.data, this->imageParameters.height * this->imageParameters.width * 4);
+    stgRefMem.unmapMemory();
+
     vk::ImageCreateInfo srcImageInfo = {
         .flags = {},
         .imageType = vk::ImageType::e2D,
@@ -184,6 +192,17 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     runtime.setImageLayout(this->imageInput, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
     runtime.setImageLayout(this->imageRef, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
     runtime.setImageLayout(this->imageOutput, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+
+    vk::BufferImageCopy copyRegion{
+        .bufferOffset = 0,
+        .bufferRowLength = this->imageParameters.width,
+        .bufferImageHeight = this->imageParameters.height,
+        .imageSubresource = vk::ImageSubresourceLayers{.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .imageOffset = vk::Offset3D{0, 0, 0},
+        .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
+    };
+    runtime._cmd_buffer.copyBufferToImage(stgBuf, this->imageInput,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_buffer.copyBufferToImage(stgRefBuf, this->imageRef,  vk::ImageLayout::eGeneral, copyRegion);
 
     runtime._cmd_buffer.end();
 

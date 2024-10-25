@@ -6,7 +6,6 @@
 #include <vector>
 
 const std::string LAYER_VALIDATION = "VK_LAYER_KHRONOS_validation";
-//const std::string LAYER_VALIDATION = "VK_LAYER_RENDERDOC_Capture";
 
 IQM::GPU::VulkanRuntime::VulkanRuntime() {
     this->_context = vk::raii::Context{};

@@ -2,12 +2,12 @@
 #include <chrono>
 
 #include <opencv2/opencv.hpp>
-#include <renderdoc_app.h>
 
 #include "args.h"
 #include "cpu/ssim_ref.h"
 #include "gpu/ssim.h"
 #include "gpu/base/vulkan_runtime.h"
+#include "debug_utils.h"
 
 cv::Mat ssim_ref(const IQM::Args& args) {
     const cv::Mat image = imread(args.inputPath, cv::IMREAD_COLOR);
@@ -26,35 +26,31 @@ cv::Mat ssim_ref(const IQM::Args& args) {
 }
 
 cv::Mat ssim(const IQM::Args& args) {
-    const cv::Mat image = imread(args.inputPath, cv::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::IMREAD_COLOR);
+    const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
+    const cv::Mat ref = imread(args.refPath, cv::ImreadModes::IMREAD_COLOR);
+    cv::Mat imageAlpha;
+    cv::Mat refAlpha;
 
-    IQM::GPU::VulkanRuntime vulkan;
+    // convert to correct format for Vulkan
+    cvtColor(image, imageAlpha, cv::COLOR_BGR2RGBA);
+    cvtColor(ref, refAlpha, cv::COLOR_BGR2RGBA);
+
+    const IQM::GPU::VulkanRuntime vulkan;
     IQM::GPU::SSIM ssim(vulkan);
 
-    RENDERDOC_API_1_6_0 *rdoc_api = nullptr;
-    if(void *mod = dlopen("librenderdoc.so", RTLD_NOW | RTLD_NOLOAD)) {
-        std::cout << "Renderdoc loaded" << std::endl;
-        pRENDERDOC_GetAPI RENDERDOC_GetAPI = (pRENDERDOC_GetAPI)(dlsym(mod, "RENDERDOC_GetAPI"));
-        int ret = RENDERDOC_GetAPI(eRENDERDOC_API_Version_1_6_0, reinterpret_cast<void **>(&rdoc_api));
-        assert(ret == 1);
-    }
-
-    if (rdoc_api) {
-        rdoc_api->StartFrameCapture(nullptr, nullptr);
-    }
+    // starts only in debug, needs to init after vulkan
+    initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    ssim.prepareImages(vulkan, image, ref);
+    ssim.prepareImages(vulkan, imageAlpha, refAlpha);
     auto out = ssim.computeMetric(vulkan);
     auto end = std::chrono::high_resolution_clock::now();
 
-    cvtColor(out, out, cv::COLOR_RGBA2BGRA);
+    // saves capture for debugging
+    finishRenderDoc();
 
-    if (rdoc_api) {
-        auto res = rdoc_api->EndFrameCapture(nullptr, nullptr);
-        std::cout << (res ? "ok" : "nok") << std::endl;
-    }
+    // convert to correct format for openCV
+    cvtColor(out, out, cv::COLOR_RGBA2BGRA);
 
     auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << execTime << std::endl;
