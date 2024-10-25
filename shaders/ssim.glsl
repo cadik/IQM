@@ -9,8 +9,8 @@ layout(set = 0, binding = 1, rgba8) uniform image2D ref_img;
 layout(set = 0, binding = 2, rgba8) uniform image2D output_img;
 
 void main() {
-    int k = 0;
-    for(int i = 0; i < 1024000; i++) {
-        k += i;
-    }
+    uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
+
+    imageStore(output_img, ivec2(x, y), vec4(gl_LocalInvocationID.x / 16.0, gl_LocalInvocationID.y / 16.0, 0.0, 1.0));
 }

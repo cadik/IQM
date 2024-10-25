@@ -5,6 +5,9 @@ namespace IQM {
         if (method == Method::SSIM_CPU) {
             return "SSIM_CPU";
         }
+        if (method == Method::SSIM) {
+            return "SSIM";
+        }
         throw std::runtime_error("");
     }
 }

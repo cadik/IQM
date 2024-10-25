@@ -3,15 +3,17 @@
 
 #include "methods.h"
 #include <cstring>
+#include <optional>
 #include <stdexcept>
 
 namespace IQM {
     class Args {
     public:
-        Args(unsigned argc, char* argv[]);
+        Args(unsigned argc, const char* argv[]);
         Method method;
-        std::string input_path;
-        std::string ref_path;
+        std::string inputPath;
+        std::string refPath;
+        std::optional<std::string> outputPath;
     };
 }
 

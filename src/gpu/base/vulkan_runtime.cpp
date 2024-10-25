@@ -6,6 +6,7 @@
 #include <vector>
 
 const std::string LAYER_VALIDATION = "VK_LAYER_KHRONOS_validation";
+//const std::string LAYER_VALIDATION = "VK_LAYER_RENDERDOC_Capture";
 
 IQM::GPU::VulkanRuntime::VulkanRuntime() {
     this->_context = vk::raii::Context{};
@@ -49,16 +50,19 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
         int i = 0;
         for (const auto& queueFamily : queueFamilyProperties) {
-            if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute) {
+            if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
                 computeQueueIndex = i;
             }
 
             i++;
+            break;
         }
 
         std::cout << "Selected device: "<< properties.deviceName << std::endl;
         break;
     }
+
+    this->_physicalDevice = physicalDevice.value();
 
     float queuePriority = 1.0f;
     vk::DeviceQueueCreateInfo queueCreateInfo{
@@ -72,10 +76,11 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         .pQueueCreateInfos = &queueCreateInfo,
     };
 
-    this->_device = vk::raii::Device{physicalDevice.value(), deviceCreateInfo};
+    this->_device = vk::raii::Device{this->_physicalDevice, deviceCreateInfo};
     this->_queue = this->_device.getQueue(computeQueueIndex, 0);
 
     vk::CommandPoolCreateInfo commandPoolCreateInfo{
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
         .queueFamilyIndex = computeQueueIndex,
     };
 
@@ -87,6 +92,48 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
     };
 
     this->_cmd_buffer = std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front());
+
+    const std::vector bindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        }
+    };
+
+    auto info = vk::DescriptorSetLayoutCreateInfo {
+        .bindingCount = 3,
+        .pBindings = bindings.data()
+    };
+
+    this->_descLayout = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
+
+
+    std::vector poolSizes = {
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 8}
+    };
+
+    vk::DescriptorPoolCreateInfo dsCreateInfo{
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 8,
+        .poolSizeCount = 1,
+        .pPoolSizes = poolSizes.data()
+    };
+
+    this->_descPool = std::move(vk::raii::DescriptorPool{this->_device, dsCreateInfo});
 }
 
 vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const std::string &path) const {
@@ -130,4 +177,108 @@ vk::raii::Pipeline IQM::GPU::VulkanRuntime::createComputePipeline(const vk::raii
 
     return std::move(vk::raii::Pipelines{this->_device, nullptr, computePipelineCreateInfo}.front());
 }
+
+uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const &memoryProperties, uint32_t typeBits, vk::MemoryPropertyFlags requirementsMask) {
+    auto typeIndex = static_cast<uint32_t>(~0);
+    for (uint32_t i = 0; i < memoryProperties.memoryTypeCount; i++) {
+        if ((typeBits & 1) && ((memoryProperties.memoryTypes[i].propertyFlags & requirementsMask) == requirementsMask)) {
+            typeIndex = i;
+            break;
+        }
+        typeBits >>= 1;
+    }
+    assert(typeIndex != static_cast<uint32_t>(~0));
+    return typeIndex;
+}
+
+std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::createBuffer(const unsigned bufferSize, const vk::BufferUsageFlagBits bufferFlags, const vk::MemoryPropertyFlags memoryFlags) const {
+    // create now, so it's destroyed before buffer
+    vk::raii::DeviceMemory memory{nullptr};
+
+    vk::BufferCreateInfo bufferCreateInfo{
+        .size = bufferSize,
+        .usage = bufferFlags,
+    };
+
+    vk::raii::Buffer buffer{this->_device, bufferCreateInfo};
+    auto memReqs = buffer.getMemoryRequirements();
+    const auto memType = findMemoryType(
+        this->_physicalDevice.getMemoryProperties(),
+        memReqs.memoryTypeBits,
+        memoryFlags
+    );
+
+    vk::MemoryAllocateInfo memoryAllocateInfo{
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = memType
+    };
+
+    memory = vk::raii::DeviceMemory{this->_device, memoryAllocateInfo};
+
+    return std::make_pair(std::move(buffer), std::move(memory));
+}
+
+std::pair<vk::raii::Image, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::createImage(const vk::ImageCreateInfo &imageInfo) const {
+    // create now, so it's destroyed before buffer
+    vk::raii::DeviceMemory memory{nullptr};
+
+    vk::raii::Image image{this->_device, imageInfo};
+    auto memReqs = image.getMemoryRequirements();
+    const auto memType = findMemoryType(
+        this->_physicalDevice.getMemoryProperties(),
+        memReqs.memoryTypeBits,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
+    );
+
+    vk::MemoryAllocateInfo memoryAllocateInfo{
+        .allocationSize = memReqs.size,
+        .memoryTypeIndex = memType
+    };
+
+    memory = vk::raii::DeviceMemory{this->_device, memoryAllocateInfo};
+    image.bindMemory(memory, 0);
+
+    return std::make_pair(std::move(image), std::move(memory));
+}
+
+vk::raii::ImageView IQM::GPU::VulkanRuntime::createImageView(const vk::raii::Image &image) const {
+    vk::ImageViewCreateInfo imageViewCreateInfo{
+        .image = image,
+        .viewType = vk::ImageViewType::e2D,
+        .format = vk::Format::eR8G8B8A8Unorm,
+        .subresourceRange = vk::ImageSubresourceRange{
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1,
+        }
+    };
+
+    return vk::raii::ImageView{this->_device, imageViewCreateInfo};
+}
+
+void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const {
+    vk::AccessFlags sourceAccessMask;
+    vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+    vk::AccessFlags destinationAccessMask;
+    vk::PipelineStageFlags destinationStage = vk::PipelineStageFlagBits::eHost;
+
+    vk::ImageAspectFlags aspectMask = vk::ImageAspectFlagBits::eColor;
+
+    vk::ImageSubresourceRange imageSubresourceRange(aspectMask, 0, 1, 0, 1);
+    vk::ImageMemoryBarrier imageMemoryBarrier{
+        .srcAccessMask = sourceAccessMask,
+        .dstAccessMask = destinationAccessMask,
+        .oldLayout = srcLayout,
+        .newLayout = targetLayout,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = image,
+        .subresourceRange = imageSubresourceRange
+    };
+    return this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+}
+
+
 
