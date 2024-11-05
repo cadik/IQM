@@ -1,13 +1,10 @@
 #ifndef SSIM_H
 #define SSIM_H
+
 #include <opencv2/core/mat.hpp>
 
+#include "img_params.h"
 #include "base/vulkan_runtime.h"
-
-struct ImageParameters {
-    unsigned width = 0;
-    unsigned height = 0;
-};
 
 namespace IQM::GPU {
     class SSIM {

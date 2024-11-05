@@ -60,3 +60,8 @@ cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::
 
     return out;
 }
+
+double IQM::CPU::SSIM_Reference::computeMSSIM(const cv::Mat &input) {
+    // data is in 0 - 255
+    return (cv::sum(input) / (input.cols * input.rows))[0] / 255.0;
+}

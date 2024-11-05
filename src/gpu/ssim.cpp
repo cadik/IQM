@@ -4,7 +4,7 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/ssim.spv");
 
     const std::vector layouts = {
-        *runtime._descLayout
+        *runtime._descLayoutImage
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {

@@ -2,12 +2,17 @@
 
 namespace IQM {
     std::string method_name(const Method &method) {
-        if (method == Method::SSIM_CPU) {
-            return "SSIM_CPU";
+        switch (method) {
+            case Method::SSIM_CPU:
+                return "SSIM_CPU";
+            case Method::SSIM:
+                return "SSIM";
+            case Method::CW_SSIM_CPU:
+                return "CW-SSIM";
+            case Method::SVD:
+                return "SVD";
+            default:
+                throw std::runtime_error("unknown method");
         }
-        if (method == Method::SSIM) {
-            return "SSIM";
-        }
-        throw std::runtime_error("");
     }
 }

@@ -7,6 +7,8 @@ namespace IQM::CPU {
     class SSIM_Reference {
     public:
         [[nodiscard]] cv::Mat computeMetric(const cv::Mat &input, const cv::Mat &reference) const;
+        [[nodiscard]] double static computeMSSIM(const cv::Mat &input);
+
         int kernelSize = 11;
         float k_1 = 0.01;
         float k_2 = 0.03;

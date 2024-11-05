@@ -2,6 +2,9 @@
 #pragma shader_stage(compute)
 #extension GL_EXT_debug_printf : enable
 
+#define E 2.71828182846
+#define PI 3.141592653589
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(set = 0, binding = 0, rgba8) uniform readonly image2D input_img;
@@ -21,34 +24,46 @@ float luminance(vec3 color) {
 }
 
 float gaussWeight(int offset) {
-    return (1.0 / (push_consts.sigma * pow(2.0 * 3.1415, 0.5))) * pow(2.71, -0.5 * pow(offset / push_consts.sigma, 2.0));
+    return (1.0 / (push_consts.sigma * pow(2.0 * PI, 0.5))) * pow(E, -0.5 * pow(offset / push_consts.sigma, 2.0));
 }
 
-float gaussBlur(ivec2 pos) {
-    ivec2 maxPos = imageSize(input_img);
-
-    float total = 0.0;
-    float totalWeight = 0.0;
-
-    int start = -(push_consts.kernelSize - 1) / 2;
-    int end = (push_consts.kernelSize - 1) / 2;
-
-    for (int xOffset = start; xOffset <= end; xOffset++) {
-        for (int yOffset = start; yOffset <= end; yOffset++) {
-            int x = pos.x + xOffset;
-            int y = pos.y + yOffset;
-
-            if (x >= maxPos.x || y >= maxPos.y || x < 0 || y < 0) {
-                continue;
-            }
-
-            float weight = gaussWeight(xOffset) * gaussWeight(yOffset);
-            total += luminance(imageLoad(input_img, ivec2(x, y)).xyz) * weight;
-            totalWeight += weight;
-        }
-    }
-
+#define gaussFunc(e) ivec2 maxPos = imageSize(input_img); \
+    float total = 0.0; \
+    float totalWeight = 0.0; \
+    int start = -(push_consts.kernelSize - 1) / 2; \
+    int end = (push_consts.kernelSize - 1) / 2; \
+    for (int xOffset = start; xOffset <= end; xOffset++) { \
+        for (int yOffset = start; yOffset <= end; yOffset++) { \
+            int x = pos.x + xOffset; \
+            int y = pos.y + yOffset; \
+            if (x >= maxPos.x || y >= maxPos.y || x < 0 || y < 0) { \
+                continue; \
+            } \
+            float weight = gaussWeight(xOffset) * gaussWeight(yOffset); \
+            total += e * weight; \
+            totalWeight += weight; \
+        } \
+    } \
     return total / totalWeight;
+
+float gaussInput(ivec2 pos) {
+    gaussFunc(luminance(imageLoad(input_img, ivec2(x, y)).xyz))
+}
+
+float gaussRef(ivec2 pos) {
+    gaussFunc(luminance(imageLoad(ref_img, ivec2(x, y)).xyz))
+}
+
+float gaussInputVar(ivec2 pos) {
+    gaussFunc( pow(luminance(imageLoad(input_img, ivec2(x, y)).xyz) - gaussInput(ivec2(x, y)) , 2.0) )
+}
+
+float gaussRefVar(ivec2 pos) {
+    gaussFunc( pow(luminance(imageLoad(ref_img, ivec2(x, y)).xyz) - gaussRef(ivec2(x, y)) , 2.0) )
+}
+
+float gaussCoVar(ivec2 pos) {
+    gaussFunc((luminance(imageLoad(input_img, ivec2(x, y)).xyz) - gaussInput(ivec2(x, y))) * (luminance(imageLoad(ref_img, ivec2(x, y)).xyz) - gaussRef(ivec2(x, y))) )
 }
 
 void main() {
@@ -65,7 +80,14 @@ void main() {
         return;
     }
 
-    float outCol = 1.0 - abs(gaussBlur(pos) - luminance(imageLoad(ref_img, ivec2(x, y)).xyz));
+    float meanImg = gaussInput(pos);
+    float meanRef = gaussRef(pos);
+    float varInput = gaussInputVar(pos);
+    float varRef = gaussRefVar(pos);
+    float coVar = gaussCoVar(pos);
+
+    float outCol = ((2.0 * meanImg * meanRef + c_1) * (2.0 * coVar + c_2)) /
+        ((pow(meanImg, 2.0) + pow(meanRef, 2.0) + c_1) * (varInput + varRef + c_2));
 
     imageStore(output_img, pos, vec4(vec3(outCol), 1.0));
 }

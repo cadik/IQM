@@ -92,7 +92,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
     this->_cmd_buffer = std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front());
 
-    const std::vector bindings = {
+    std::vector bindings = {
         vk::DescriptorSetLayoutBinding{
             .binding = 0,
             .descriptorType = vk::DescriptorType::eStorageImage,
@@ -114,21 +114,44 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
     };
 
     auto info = vk::DescriptorSetLayoutCreateInfo {
-        .bindingCount = 3,
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
         .pBindings = bindings.data()
     };
 
-    this->_descLayout = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
+    this->_descLayoutImage = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
+
+    bindings = {
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    };
+
+    info = vk::DescriptorSetLayoutCreateInfo {
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    };
+
+    this->_descLayoutBuffer = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
 
 
     std::vector poolSizes = {
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 8}
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 8},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 8}
     };
 
     vk::DescriptorPoolCreateInfo dsCreateInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
         .maxSets = 8,
-        .poolSizeCount = 1,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data()
     };
 
@@ -190,7 +213,7 @@ uint32_t findMemoryType(vk::PhysicalDeviceMemoryProperties const &memoryProperti
     return typeIndex;
 }
 
-std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::createBuffer(const unsigned bufferSize, const vk::BufferUsageFlagBits bufferFlags, const vk::MemoryPropertyFlags memoryFlags) const {
+std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::createBuffer(const unsigned bufferSize, const vk::BufferUsageFlags bufferFlags, const vk::MemoryPropertyFlags memoryFlags) const {
     // create now, so it's destroyed before buffer
     vk::raii::DeviceMemory memory{nullptr};
 
