@@ -5,6 +5,8 @@
 #include <stdexcept>
 #include <vector>
 
+#include "vulkan_image.h"
+
 const std::string LAYER_VALIDATION = "VK_LAYER_KHRONOS_validation";
 
 IQM::GPU::VulkanRuntime::VulkanRuntime() {
@@ -92,7 +94,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
     this->_cmd_buffer = std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front());
 
-    std::vector bindings = {
+    this->_descLayoutThreeImage = std::move(this->createDescLayout({
         vk::DescriptorSetLayoutBinding{
             .binding = 0,
             .descriptorType = vk::DescriptorType::eStorageImage,
@@ -111,16 +113,24 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         }
-    };
+    }));
 
-    auto info = vk::DescriptorSetLayoutCreateInfo {
-        .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings = bindings.data()
-    };
+    this->_descLayoutTwoImage = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
 
-    this->_descLayoutImage = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
-
-    bindings = {
+    this->_descLayoutBuffer = std::move(this->createDescLayout({
         vk::DescriptorSetLayoutBinding{
             .binding = 0,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -133,14 +143,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         },
-    };
-
-    info = vk::DescriptorSetLayoutCreateInfo {
-        .bindingCount = static_cast<uint32_t>(bindings.size()),
-        .pBindings = bindings.data()
-    };
-
-    this->_descLayoutBuffer = std::move(vk::raii::DescriptorSetLayout {this->_device, info});
+    }));
 
 
     std::vector poolSizes = {
@@ -240,7 +243,7 @@ std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::cre
     return std::make_pair(std::move(buffer), std::move(memory));
 }
 
-std::pair<vk::raii::Image, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::createImage(const vk::ImageCreateInfo &imageInfo) const {
+IQM::GPU::VulkanImage IQM::GPU::VulkanRuntime::createImage(const vk::ImageCreateInfo &imageInfo) const {
     // create now, so it's destroyed before buffer
     vk::raii::DeviceMemory memory{nullptr};
 
@@ -260,14 +263,10 @@ std::pair<vk::raii::Image, vk::raii::DeviceMemory> IQM::GPU::VulkanRuntime::crea
     memory = vk::raii::DeviceMemory{this->_device, memoryAllocateInfo};
     image.bindMemory(memory, 0);
 
-    return std::make_pair(std::move(image), std::move(memory));
-}
-
-vk::raii::ImageView IQM::GPU::VulkanRuntime::createImageView(const vk::raii::Image &image) const {
     vk::ImageViewCreateInfo imageViewCreateInfo{
         .image = image,
         .viewType = vk::ImageViewType::e2D,
-        .format = vk::Format::eR8G8B8A8Unorm,
+        .format = imageInfo.format,
         .subresourceRange = vk::ImageSubresourceRange{
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .baseMipLevel = 0,
@@ -277,7 +276,11 @@ vk::raii::ImageView IQM::GPU::VulkanRuntime::createImageView(const vk::raii::Ima
         }
     };
 
-    return vk::raii::ImageView{this->_device, imageViewCreateInfo};
+    return VulkanImage{
+        .memory = std::move(memory),
+        .image = std::move(image),
+        .imageView = vk::raii::ImageView{this->_device, imageViewCreateInfo},
+    };
 }
 
 void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const {
@@ -302,5 +305,11 @@ void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::I
     return this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
 }
 
+vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const {
+    auto info = vk::DescriptorSetLayoutCreateInfo {
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    };
 
-
+    return vk::raii::DescriptorSetLayout {this->_device, info};
+}

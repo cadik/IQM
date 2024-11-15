@@ -4,7 +4,7 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/ssim.spv");
 
     const std::vector layouts = {
-        *runtime._descLayoutImage
+        *runtime._descLayoutThreeImage
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
@@ -109,7 +109,7 @@ cv::Mat IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
         .imageOffset = vk::Offset3D{0, 0, 0},
         .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
     };
-    runtime._cmd_buffer.copyImageToBuffer(this->imageOutput,  vk::ImageLayout::eGeneral, stgBuf, copyRegion);
+    runtime._cmd_buffer.copyImageToBuffer(this->imageOut.image,  vk::ImageLayout::eGeneral, stgBuf, copyRegion);
 
     runtime._cmd_buffer.end();
 
@@ -186,20 +186,9 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     vk::ImageCreateInfo dstImageInfo = {srcImageInfo};
     dstImageInfo.usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc;
 
-    auto [imgInput, imgInputMem] = runtime.createImage(srcImageInfo);
-    this->imageInput = std::move(imgInput);
-    this->imageInputMemory = std::move(imgInputMem);
-    this->imageInputView = std::move(runtime.createImageView(this->imageInput));
-
-    auto [imgRef, imgRefMem] = runtime.createImage(srcImageInfo);
-    this->imageRef = std::move(imgRef);
-    this->imageRefMemory = std::move(imgRefMem);
-    this->imageRefView = std::move(runtime.createImageView(this->imageRef));
-
-    auto [imgOut, imgOutMem] = runtime.createImage(dstImageInfo);
-    this->imageOutput = std::move(imgOut);
-    this->imageOutputMemory = std::move(imgOutMem);
-    this->imageOutputView = std::move(runtime.createImageView(this->imageOutput));
+    this->imageInput = runtime.createImage(srcImageInfo);
+    this->imageRef = runtime.createImage(srcImageInfo);
+    this->imageOut = runtime.createImage(dstImageInfo);
 
     // copy data to images, correct formats
     const vk::CommandBufferBeginInfo beginInfo = {
@@ -207,9 +196,9 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     };
     runtime._cmd_buffer.begin(beginInfo);
 
-    runtime.setImageLayout(this->imageInput, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageRef, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageOutput, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(this->imageInput.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(this->imageRef.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(this->imageOut.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
     vk::BufferImageCopy copyRegion{
         .bufferOffset = 0,
@@ -219,8 +208,8 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .imageOffset = vk::Offset3D{0, 0, 0},
         .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
     };
-    runtime._cmd_buffer.copyBufferToImage(stgBuf, this->imageInput,  vk::ImageLayout::eGeneral, copyRegion);
-    runtime._cmd_buffer.copyBufferToImage(stgRefBuf, this->imageRef,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_buffer.copyBufferToImage(stgBuf, this->imageInput.image,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_buffer.copyBufferToImage(stgRefBuf, this->imageRef.image,  vk::ImageLayout::eGeneral, copyRegion);
 
     runtime._cmd_buffer.end();
 
@@ -243,17 +232,17 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     std::vector imageInfos = {
         vk::DescriptorImageInfo {
             .sampler = nullptr,
-            .imageView = this->imageInputView,
+            .imageView = this->imageInput.imageView,
             .imageLayout = vk::ImageLayout::eGeneral,
         },
         vk::DescriptorImageInfo {
             .sampler = nullptr,
-            .imageView = this->imageRefView,
+            .imageView = this->imageRef.imageView,
             .imageLayout = vk::ImageLayout::eGeneral,
         },
         vk::DescriptorImageInfo {
             .sampler = nullptr,
-            .imageView = this->imageOutputView,
+            .imageView = this->imageOut.imageView,
             .imageLayout = vk::ImageLayout::eGeneral,
         },
     };

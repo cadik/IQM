@@ -10,6 +10,7 @@ namespace IQM {
         SSIM = 1,
         CW_SSIM_CPU = 2,
         SVD = 3,
+        FSIM = 4,
     };
 
     std::string method_name(const Method &method);

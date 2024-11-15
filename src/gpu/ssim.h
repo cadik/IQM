@@ -25,17 +25,9 @@ namespace IQM::GPU {
         vk::raii::Pipeline pipeline = VK_NULL_HANDLE;
         vk::raii::DescriptorSet descSet = VK_NULL_HANDLE;
 
-        vk::raii::DeviceMemory imageInputMemory = VK_NULL_HANDLE;
-        vk::raii::DeviceMemory imageRefMemory = VK_NULL_HANDLE;
-        vk::raii::DeviceMemory imageOutputMemory = VK_NULL_HANDLE;
-
-        vk::raii::Image imageInput = VK_NULL_HANDLE;
-        vk::raii::Image imageRef = VK_NULL_HANDLE;
-        vk::raii::Image imageOutput = VK_NULL_HANDLE;
-
-        vk::raii::ImageView imageInputView = VK_NULL_HANDLE;
-        vk::raii::ImageView imageRefView = VK_NULL_HANDLE;
-        vk::raii::ImageView imageOutputView = VK_NULL_HANDLE;
+        VulkanImage imageInput;
+        VulkanImage imageRef;
+        VulkanImage imageOut;
     };
 }
 

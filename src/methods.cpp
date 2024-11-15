@@ -11,6 +11,8 @@ namespace IQM {
                 return "CW-SSIM";
             case Method::SVD:
                 return "SVD";
+            case Method::FSIM:
+                return "FSIM";
             default:
                 throw std::runtime_error("unknown method");
         }
