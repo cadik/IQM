@@ -7,9 +7,9 @@
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0, rgba8) uniform readonly image2D input_img;
-layout(set = 0, binding = 1, rgba8) uniform readonly image2D ref_img;
-layout(set = 0, binding = 2, rgba8) uniform writeonly image2D output_img;
+layout(set = 0, binding = 0, rg32f) uniform readonly image2D luma_img;
+layout(set = 0, binding = 1, rg32f) uniform readonly image2D lumaBlur_img;
+layout(set = 0, binding = 2, r32f) uniform writeonly image2D output_img;
 
 layout( push_constant ) uniform constants {
     int kernelSize;
@@ -18,16 +18,12 @@ layout( push_constant ) uniform constants {
     float sigma;
 } push_consts;
 
-// Rec. 601
-float luminance(vec3 color) {
-    return 0.2989 * color.r + 0.5810 * color.g + 0.1140 * color.b;
+float gaussWeight(ivec2 offset) {
+    float dist = (offset.x * offset.x) + (offset.y * offset.y);
+    return (1.0 / (2.0 * PI * pow(push_consts.sigma, 2.0))) * pow(E, -(dist / (2.0 * pow(push_consts.sigma, 2.0))));
 }
 
-float gaussWeight(int offset) {
-    return (1.0 / (push_consts.sigma * pow(2.0 * PI, 0.5))) * pow(E, -0.5 * pow(offset / push_consts.sigma, 2.0));
-}
-
-#define gaussFunc(e) ivec2 maxPos = imageSize(input_img); \
+#define gaussFunc(e) ivec2 maxPos = imageSize(luma_img); \
     float total = 0.0; \
     float totalWeight = 0.0; \
     int start = -(push_consts.kernelSize - 1) / 2; \
@@ -39,36 +35,26 @@ float gaussWeight(int offset) {
             if (x >= maxPos.x || y >= maxPos.y || x < 0 || y < 0) { \
                 continue; \
             } \
-            float weight = gaussWeight(xOffset) * gaussWeight(yOffset); \
+            float weight = gaussWeight(ivec2(xOffset, yOffset)); \
             total += e * weight; \
             totalWeight += weight; \
         } \
     } \
     return total / totalWeight;
 
-float gaussInput(ivec2 pos) {
-    gaussFunc(luminance(imageLoad(input_img, ivec2(x, y)).xyz))
-}
-
-float gaussRef(ivec2 pos) {
-    gaussFunc(luminance(imageLoad(ref_img, ivec2(x, y)).xyz))
-}
-
 float gaussInputVar(ivec2 pos) {
-    gaussFunc( pow(luminance(imageLoad(input_img, ivec2(x, y)).xyz) - gaussInput(ivec2(x, y)) , 2.0) )
+    gaussFunc( pow(imageLoad(luma_img, ivec2(x, y)).x - imageLoad(lumaBlur_img, pos).x , 2.0) )
 }
 
 float gaussRefVar(ivec2 pos) {
-    gaussFunc( pow(luminance(imageLoad(ref_img, ivec2(x, y)).xyz) - gaussRef(ivec2(x, y)) , 2.0) )
+    gaussFunc( pow(imageLoad(luma_img, ivec2(x, y)).y - imageLoad(lumaBlur_img, pos).y , 2.0) )
 }
 
 float gaussCoVar(ivec2 pos) {
-    gaussFunc((luminance(imageLoad(input_img, ivec2(x, y)).xyz) - gaussInput(ivec2(x, y))) * (luminance(imageLoad(ref_img, ivec2(x, y)).xyz) - gaussRef(ivec2(x, y))) )
+    gaussFunc(( imageLoad(luma_img, ivec2(x, y)).x - imageLoad(lumaBlur_img, pos).x) * (imageLoad(luma_img, ivec2(x, y)).y - imageLoad(lumaBlur_img, pos).y) )
 }
 
 void main() {
-    float sigma = 1.5;
-
     float c_1 = pow(push_consts.k_1, 2);
     float c_2 = pow(push_consts.k_2, 2);
 
@@ -76,12 +62,12 @@ void main() {
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
     ivec2 pos = ivec2(x, y);
 
-    if (x > imageSize(input_img).x || y > imageSize(input_img).y) {
+    if (x > imageSize(luma_img).x || y > imageSize(luma_img).y) {
         return;
     }
 
-    float meanImg = gaussInput(pos);
-    float meanRef = gaussRef(pos);
+    float meanImg = imageLoad(lumaBlur_img, pos).x;
+    float meanRef = imageLoad(lumaBlur_img, pos).y;
     float varInput = gaussInputVar(pos);
     float varRef = gaussRefVar(pos);
     float coVar = gaussCoVar(pos);

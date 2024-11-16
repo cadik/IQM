@@ -29,15 +29,7 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
         }
     };
 
-    vk::PipelineLayoutCreateInfo layoutInfo = {
-        .flags = {},
-        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
-        .pSetLayouts = layouts.data(),
-        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
-        .pPushConstantRanges = ranges.data(),
-    };
-
-    this->layoutDownscale = runtime.createPipelineLayout(layoutInfo);
+    this->layoutDownscale = runtime.createPipelineLayout(layouts, ranges);
     this->pipelineDownscale = runtime.createComputePipeline(this->downscaleKernel, this->layoutDownscale);
 }
 

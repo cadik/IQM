@@ -19,15 +19,7 @@ IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
 
     this->descSet = std::move(vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo}.front());
 
-    vk::PipelineLayoutCreateInfo layoutInfo = {
-        .flags = {},
-        .setLayoutCount = 1,
-        .pSetLayouts = layouts.data(),
-        .pushConstantRangeCount = 0,
-        .pPushConstantRanges = nullptr,
-    };
-
-    this->layout = runtime.createPipelineLayout(layoutInfo);
+    this->layout = runtime.createPipelineLayout(layouts, {});
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 }
 

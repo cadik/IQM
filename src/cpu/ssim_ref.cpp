@@ -25,8 +25,8 @@ cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::
     cv::Mat varianceInput = inputFloat - blurredInput;
     cv::Mat varianceRef = refFloat - blurredRef;
 
-    cv::Mat contravariance;
-    cv::multiply(varianceInput, varianceRef, contravariance);
+    cv::Mat covariance;
+    cv::multiply(varianceInput, varianceRef, covariance);
 
     varianceInput.forEach<float>([](float& i, const int []) {i *= i;});
     cv::Mat varianceInputBlurred;
@@ -36,10 +36,10 @@ cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::
     cv::Mat varianceRefBlurred;
     cv::GaussianBlur(varianceRef, varianceRefBlurred, kernel, sigma);
 
-    cv::Mat contravarianceRefBlurred;
-    cv::GaussianBlur(contravariance, contravarianceRefBlurred, kernel, sigma);
+    cv::Mat covarianceBlurred;
+    cv::GaussianBlur(covariance, covarianceBlurred, kernel, sigma);
 
-    cv::Mat out = input;
+    cv::Mat out = inputFloat;
     for (int y = 0; y < input.rows; y++) {
         for (int x = 0; x < input.cols; x++) {
             auto mean_img = blurredInput.at<float>(y, x);
@@ -47,14 +47,12 @@ cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::
 
             auto variance_img = varianceInputBlurred.at<float>(y, x);
             auto variance_ref = varianceRefBlurred.at<float>(y, x);
-            auto contravariance_pixel = contravarianceRefBlurred.at<float>(y, x);
+            auto covariance_pixel = covarianceBlurred.at<float>(y, x);
 
-            auto val = ((2.0 * mean_img * mean_ref + c_1) * (2.0 * contravariance_pixel + c_2)) /
+            auto val = ((2.0 * mean_img * mean_ref + c_1) * (2.0 * covariance_pixel + c_2)) /
                     ((pow(mean_img, 2.0) + pow(mean_ref, 2.0) + c_1) * (variance_img + variance_ref + c_2));
-            auto val_mapped = static_cast<uchar>(std::max(val * 255.0, 0.0));
 
-            auto col = cv::Vec3b{val_mapped, val_mapped, val_mapped};
-            out.at<cv::Vec3b>(y, x) = col;
+            out.at<float>(y, x) = static_cast<float>(val);
         }
     }
 
@@ -62,6 +60,5 @@ cv::Mat IQM::CPU::SSIM_Reference::computeMetric(const cv::Mat& input, const cv::
 }
 
 double IQM::CPU::SSIM_Reference::computeMSSIM(const cv::Mat &input) {
-    // data is in 0 - 255
-    return (cv::sum(input) / (input.cols * input.rows))[0] / 255.0;
+    return (cv::sum(input) / (input.cols * input.rows))[0];
 }

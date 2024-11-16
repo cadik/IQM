@@ -11,7 +11,7 @@ namespace IQM::GPU {
     public:
         VulkanRuntime();
         [[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::string& path) const;
-        [[nodiscard]] vk::raii::PipelineLayout createPipelineLayout(const vk::PipelineLayoutCreateInfo &pipelineLayoutCreateInfo) const;
+        [[nodiscard]] vk::raii::PipelineLayout createPipelineLayout(const std::vector<vk::DescriptorSetLayout> &layouts, const std::vector<vk::PushConstantRange> &ranges) const;
         [[nodiscard]] vk::raii::Pipeline createComputePipeline(const vk::raii::ShaderModule &shader, const vk::raii::PipelineLayout &layout) const;
         [[nodiscard]] std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(unsigned bufferSize, vk::BufferUsageFlags bufferFlags, vk::MemoryPropertyFlags memoryFlags) const;
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;

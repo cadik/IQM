@@ -185,8 +185,16 @@ vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const std::st
     return module;
 }
 
-vk::raii::PipelineLayout IQM::GPU::VulkanRuntime::createPipelineLayout(const vk::PipelineLayoutCreateInfo &pipelineLayoutCreateInfo) const {
-    return vk::raii::PipelineLayout{this->_device, pipelineLayoutCreateInfo};
+vk::raii::PipelineLayout IQM::GPU::VulkanRuntime::createPipelineLayout(const std::vector<vk::DescriptorSetLayout> &layouts, const std::vector<vk::PushConstantRange> &ranges) const {
+    vk::PipelineLayoutCreateInfo layoutInfo = {
+        .flags = {},
+        .setLayoutCount = static_cast<uint32_t>(layouts.size()),
+        .pSetLayouts = layouts.data(),
+        .pushConstantRangeCount = static_cast<uint32_t>(ranges.size()),
+        .pPushConstantRanges = ranges.data(),
+    };
+
+    return vk::raii::PipelineLayout{this->_device, layoutInfo};
 }
 
 vk::raii::Pipeline IQM::GPU::VulkanRuntime::createComputePipeline(const vk::raii::ShaderModule &shader, const vk::raii::PipelineLayout &layout) const {

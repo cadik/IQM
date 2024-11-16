@@ -27,7 +27,10 @@ cv::Mat ssim_ref(const IQM::Args& args) {
     auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << execTime << std::endl;
 
-    return out;
+    cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
+    outEightBit = out * 255.0;
+
+    return outEightBit;
 }
 
 cv::Mat ssim(const IQM::Args& args) {
@@ -54,15 +57,15 @@ cv::Mat ssim(const IQM::Args& args) {
     // saves capture for debugging
     finishRenderDoc();
 
-    // convert to correct format for openCV
-    cvtColor(out, out, cv::COLOR_RGBA2BGRA);
-
     std::cout << "MSSIM: " << IQM::CPU::SSIM_Reference::computeMSSIM(out) << std::endl;
 
     auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << execTime << std::endl;
 
-    return out;
+    cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
+    outEightBit = out * 255.0;
+
+    return outEightBit;
 }
 
 cv::Mat cw_ssim_ref(const IQM::Args& args) {
