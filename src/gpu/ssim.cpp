@@ -59,7 +59,7 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
     this->pipelineGaussInput = runtime.createComputePipeline(this->kernelGaussInput, this->layoutGaussInput);
 }
 
-cv::Mat IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
+IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
@@ -213,13 +213,17 @@ cv::Mat IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
     runtime._queue.submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
-    cv::Mat dummy;
-    dummy.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
+    cv::Mat image;
+    image.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
     void * outBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * sizeof(float), {});
-    memcpy(dummy.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
+    memcpy(image.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
+    float mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
     stgMem.unmapMemory();
 
-    return dummy;
+    return SSIMResult {
+        .image = image,
+        .mssim = mssim
+    };
 }
 
 void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
@@ -373,6 +377,23 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     };
 
     runtime._device.updateDescriptorSets({writeSet, writeSetLumapack, writeSetGauss}, nullptr);
+}
+
+double IQM::GPU::SSIM::computeMSSIM(const float* buffer, unsigned width, unsigned height) const {
+    // there are two passes of gaussian blur, original MATLAB code trims the boundary of images
+    // so that zero padded edges are not included in the final computation
+    double sum = 0;
+    const unsigned start = (this->kernelSize - 1) / 2;
+    const unsigned widthEnd = width - (this->kernelSize - 1) / 2;
+    const unsigned heightEnd = height - (this->kernelSize - 1) / 2;
+
+    for (unsigned y = start; y <= heightEnd; y++) {
+        for (unsigned x = start; x <= widthEnd; x++) {
+            sum += buffer[y * width + x];
+        }
+    }
+
+    return sum / static_cast<double>((widthEnd - start + 1) * (heightEnd - start + 1));
 }
 
 std::vector<vk::DescriptorImageInfo> IQM::GPU::createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images) {

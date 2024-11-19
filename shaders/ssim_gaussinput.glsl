@@ -17,7 +17,7 @@ layout( push_constant ) uniform constants {
 
 float gaussWeight(ivec2 offset) {
     float dist = (offset.x * offset.x) + (offset.y * offset.y);
-    return (1.0 / (2.0 * PI * pow(push_consts.sigma, 2.0))) * pow(E, -(dist / (2.0 * pow(push_consts.sigma, 2.0))));
+    return pow(E, -(dist / (2.0 * pow(push_consts.sigma, 2.0))));
 }
 
 void main() {

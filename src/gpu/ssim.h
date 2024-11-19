@@ -7,11 +7,17 @@
 #include "base/vulkan_runtime.h"
 
 namespace IQM::GPU {
+    struct SSIMResult {
+        cv::Mat image;
+        float mssim;
+    };
+
     class SSIM {
     public:
         explicit SSIM(const VulkanRuntime &runtime);
-        cv::Mat computeMetric(const VulkanRuntime &runtime);
+        SSIMResult computeMetric(const VulkanRuntime &runtime);
         void prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        [[nodiscard]] double computeMSSIM(const float *buffer, unsigned width, unsigned height) const;
 
         int kernelSize = 11;
         float k_1 = 0.01;

@@ -51,19 +51,19 @@ cv::Mat ssim(const IQM::Args& args) {
 
     auto start = std::chrono::high_resolution_clock::now();
     ssim.prepareImages(vulkan, imageAlpha, refAlpha);
-    auto out = ssim.computeMetric(vulkan);
+    auto result = ssim.computeMetric(vulkan);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
     finishRenderDoc();
 
-    std::cout << "MSSIM: " << IQM::CPU::SSIM_Reference::computeMSSIM(out) << std::endl;
+    std::cout << "MSSIM: " << result.mssim << std::endl;
 
     auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
     std::cout << execTime << std::endl;
 
     cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
-    outEightBit = out * 255.0;
+    outEightBit = result.image * 255.0;
 
     return outEightBit;
 }
