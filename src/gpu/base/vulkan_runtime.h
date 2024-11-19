@@ -16,6 +16,7 @@ namespace IQM::GPU {
         [[nodiscard]] std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(unsigned bufferSize, vk::BufferUsageFlags bufferFlags, vk::MemoryPropertyFlags memoryFlags) const;
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
         void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
+        static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
 
         vk::raii::Context _context;
         // assigned VK_NULL_HANDLE to sidestep accidental usage of deleted constructor
@@ -27,6 +28,7 @@ namespace IQM::GPU {
         vk::raii::CommandBuffer _cmd_buffer = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutThreeImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutTwoImage = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout _descLayoutOneImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutBuffer = VK_NULL_HANDLE;
         vk::raii::DescriptorPool _descPool = VK_NULL_HANDLE;
     private:

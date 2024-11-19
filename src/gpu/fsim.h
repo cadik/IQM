@@ -16,6 +16,7 @@ namespace IQM::GPU {
         void sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
+        void createLowpassFilter(const VulkanRuntime & runtime, int, int);
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
@@ -28,6 +29,12 @@ namespace IQM::GPU {
 
         VulkanImage imageInputDownscaled;
         VulkanImage imageRefDownscaled;
+        VulkanImage imageLowpassFilter;
+
+        vk::raii::ShaderModule lowpassFilterKernel = VK_NULL_HANDLE;
+        vk::raii::PipelineLayout layoutLowpassFilter = VK_NULL_HANDLE;
+        vk::raii::Pipeline pipelineLowpassFilter = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSetLowpassFilter = VK_NULL_HANDLE;
     };
 }
 

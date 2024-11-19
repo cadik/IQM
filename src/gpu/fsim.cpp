@@ -4,10 +4,21 @@
 
 IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
+    this->lowpassFilterKernel = runtime.createShaderModule("../shaders_out/fsim_lowpassfilter.spv");
+
+    const std::vector layoutsDownscale = {
+        *runtime._descLayoutTwoImage,
+        *runtime._descLayoutTwoImage,
+    };
+
+    const std::vector layoutsLowpass = {
+        *runtime._descLayoutOneImage,
+    };
 
     const std::vector layouts = {
         *runtime._descLayoutTwoImage,
-        *runtime._descLayoutTwoImage
+        *runtime._descLayoutTwoImage,
+        *runtime._descLayoutOneImage,
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
@@ -19,18 +30,17 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     auto sets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
     this->descSetDownscaleIn = std::move(sets[0]);
     this->descSetDownscaleRef = std::move(sets[1]);
+    this->descSetLowpassFilter = std::move(sets[2]);
 
     // 2x int - kernel size, retyped bool
-    std::vector ranges {
-        vk::PushConstantRange {
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-            .offset = 0,
-            .size = sizeof(int) * 2,
-        }
-    };
+    const auto downsampleRanges = VulkanRuntime::createPushConstantRange(sizeof(int) * 2);
+    // 1x float - cutoff, 1x int - order
+    const auto lowpassRanges = VulkanRuntime::createPushConstantRange(sizeof(int) + sizeof(float));
 
-    this->layoutDownscale = runtime.createPipelineLayout(layouts, ranges);
+    this->layoutDownscale = runtime.createPipelineLayout(layoutsDownscale, downsampleRanges);
     this->pipelineDownscale = runtime.createComputePipeline(this->downscaleKernel, this->layoutDownscale);
+    this->layoutLowpassFilter = runtime.createPipelineLayout(layoutsLowpass, lowpassRanges);
+    this->pipelineLowpassFilter = runtime.createComputePipeline(this->lowpassFilterKernel, this->layoutLowpassFilter);
 }
 
 cv::Mat IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
@@ -46,6 +56,7 @@ cv::Mat IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Ma
 
     this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
     this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
+    this->createLowpassFilter(runtime, widthDownscale, heightDownscale);
 
     return image;
 }
@@ -156,8 +167,13 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
+    vk::ImageCreateInfo imageFloatInfo = {imageInfo};
+    imageFloatInfo.format = vk::Format::eR32Sfloat;
+    imageFloatInfo.usage = vk::ImageUsageFlagBits::eStorage;
+
     this->imageInputDownscaled = runtime.createImage(imageInfo);
     this->imageRefDownscaled = runtime.createImage(imageInfo);
+    this->imageLowpassFilter = runtime.createImage(imageFloatInfo);
 
     std::vector imageInfosInput = {
         vk::DescriptorImageInfo {
@@ -185,6 +201,14 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
         },
     };
 
+    std::vector imageInfosLPF = {
+        vk::DescriptorImageInfo {
+            .sampler = nullptr,
+            .imageView = this->imageLowpassFilter.imageView,
+            .imageLayout = vk::ImageLayout::eGeneral,
+        },
+    };
+
     const vk::WriteDescriptorSet writeSetInput{
         .dstSet = this->descSetDownscaleIn,
         .dstBinding = 0,
@@ -207,8 +231,19 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
         .pTexelBufferView = nullptr,
     };
 
+    const vk::WriteDescriptorSet writeSetLPF{
+        .dstSet = this->descSetLowpassFilter,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = imageInfosLPF.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
     const std::vector writes = {
-        writeSetRef, writeSetInput
+        writeSetRef, writeSetInput, writeSetLPF
     };
 
     runtime._device.updateDescriptorSets(writes, nullptr);
@@ -249,6 +284,58 @@ void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
     runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutDownscale, 0, {this->descSetDownscaleRef}, {});
+    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+
+    runtime._cmd_buffer.end();
+
+    const std::vector cmdBufs = {
+        &*runtime._cmd_buffer
+    };
+
+    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
+    const vk::SubmitInfo submitInfo{
+        .pWaitDstStageMask = &mask,
+        .commandBufferCount = 1,
+        .pCommandBuffers = *cmdBufs.data()
+    };
+
+    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
+
+    runtime._queue.submit(submitInfo, *fence);
+    runtime._device.waitIdle();
+}
+
+void IQM::GPU::FSIM::createLowpassFilter(const VulkanRuntime &runtime, const int width, const int height) {
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_buffer.begin(beginInfo);
+
+    runtime.setImageLayout(this->imageLowpassFilter.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+
+    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineLowpassFilter);
+    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutLowpassFilter, 0, {this->descSetLowpassFilter}, {});
+
+    int order = 15;
+
+    std::array<float, 2> values = {
+        0.45,
+        *reinterpret_cast<float *>(&order),
+    };
+    runtime._cmd_buffer.pushConstants<float>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, values);
+
+    //shader works in 16x16 tiles
+    constexpr unsigned tileSize = 8;
+
+    auto groupsX = width / tileSize;
+    if (width % tileSize != 0) {
+        groupsX++;
+    }
+    auto groupsY = height / tileSize;
+    if (height % tileSize != 0) {
+        groupsY++;
+    }
+
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
     runtime._cmd_buffer.end();

@@ -130,6 +130,15 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         },
     }));
 
+    this->_descLayoutOneImage = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
+
     this->_descLayoutBuffer = std::move(this->createDescLayout({
         vk::DescriptorSetLayoutBinding{
             .binding = 0,
@@ -311,6 +320,16 @@ void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::I
         .subresourceRange = imageSubresourceRange
     };
     return this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+}
+
+std::vector<vk::PushConstantRange> IQM::GPU::VulkanRuntime::createPushConstantRange(const unsigned size) {
+    return {
+        vk::PushConstantRange {
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+            .offset = 0,
+            .size = size,
+        }
+    };
 }
 
 vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const {

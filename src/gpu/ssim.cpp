@@ -32,23 +32,11 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
 
     // 1x int - kernel size
     // 3x float - K_1, K_2, sigma
-    std::vector ranges {
-        vk::PushConstantRange {
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-            .offset = 0,
-            .size = sizeof(int) * 1 + sizeof(float) * 3,
-        }
-    };
+    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(int) * 1 + sizeof(float) * 3);
 
     // 1x int - kernel size
     // 1x float - sigma
-    std::vector rangesGauss {
-        vk::PushConstantRange {
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-            .offset = 0,
-            .size = sizeof(int) * 1 + sizeof(float) * 1,
-        }
-    };
+    const auto rangesGauss = VulkanRuntime::createPushConstantRange(sizeof(int) + sizeof(float));
 
     this->layout = runtime.createPipelineLayout(layouts_3, ranges);
     this->layoutLumapack = runtime.createPipelineLayout(layouts_3, {});
