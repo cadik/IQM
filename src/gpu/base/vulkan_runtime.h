@@ -18,6 +18,8 @@ namespace IQM::GPU {
         void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
 
+        std::string selectedDevice;
+
         vk::raii::Context _context;
         // assigned VK_NULL_HANDLE to sidestep accidental usage of deleted constructor
         vk::raii::Instance _instance = VK_NULL_HANDLE;

@@ -1,13 +1,23 @@
 #ifndef FSIM_H
 #define FSIM_H
+#include <chrono>
 #include <opencv2/core/mat.hpp>
+
+#include "../timestamps.h"
 #include "base/vulkan_runtime.h"
 
 namespace IQM::GPU {
+    struct FSIMResult {
+        cv::Mat image;
+        float fsim;
+        float fsimc;
+        Timestamps timestamps;
+    };
+
     class FSIM {
     public:
         explicit FSIM(const VulkanRuntime &runtime);
-        cv::Mat computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        FSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
 
         bool doColorComparison = true;
 

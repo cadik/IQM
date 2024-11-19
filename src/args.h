@@ -14,6 +14,7 @@ namespace IQM {
         std::string inputPath;
         std::string refPath;
         std::optional<std::string> outputPath;
+        bool verbose = false;
     };
 }
 

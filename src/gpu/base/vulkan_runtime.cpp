@@ -59,7 +59,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
             i++;
         }
 
-        std::cout << "Selected device: "<< properties.deviceName << std::endl;
+        this->selectedDevice = std::string(properties.deviceName);
         break;
     }
 

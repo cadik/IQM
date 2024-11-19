@@ -8,12 +8,9 @@ IQM::Args::Args(const unsigned argc, const char *argv[]) {
     bool parsedReference = false;
 
     for (unsigned i = 0; i < argc; i++) {
-        if ((i + 1) < argc) {
+        if (i + 1 < argc) {
             if (strcmp(argv[i], "--method") == 0) {
-                if (strcmp(argv[i + 1], "SSIM_CPU") == 0) {
-                    this->method = Method::SSIM_CPU;
-                    parsedMethod = true;
-                } else if (strcmp(argv[i + 1], "SSIM") == 0) {
+                if (strcmp(argv[i + 1], "SSIM") == 0) {
                     this->method = Method::SSIM;
                     parsedMethod = true;
                 } else if (strcmp(argv[i + 1], "CW_SSIM_CPU") == 0) {
@@ -35,6 +32,9 @@ IQM::Args::Args(const unsigned argc, const char *argv[]) {
             } else if (strcmp(argv[i], "--output") == 0) {
                 this->outputPath = std::string(argv[i + 1]);
             }
+        }
+        if (strcmp(argv[i], "-v") == 0) {
+            this->verbose = true;
         }
     }
 

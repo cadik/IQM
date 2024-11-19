@@ -14,8 +14,6 @@ add_executable(IQM src/main.cpp
         src/args.cpp
         src/args.h
         src/methods.cpp
-        src/cpu/ssim_ref.cpp
-        src/cpu/ssim_ref.h
         src/gpu/base/vulkan_runtime.cpp
         src/gpu/base/vulkan_runtime.h
         src/gpu/ssim.cpp
@@ -28,6 +26,7 @@ add_executable(IQM src/main.cpp
         src/gpu/img_params.h
         src/gpu/fsim.cpp
         src/gpu/fsim.h
-        src/gpu/base/vulkan_image.h)
+        src/gpu/base/vulkan_image.h
+        src/timestamps.h)
 
 target_link_libraries( IQM ${OpenCV_LIBS} Vulkan::Vulkan )

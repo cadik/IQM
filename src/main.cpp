@@ -4,34 +4,12 @@
 #include <opencv2/opencv.hpp>
 
 #include "args.h"
-#include "cpu/ssim_ref.h"
 #include "gpu/ssim.h"
 #include "gpu/base/vulkan_runtime.h"
 #include "debug_utils.h"
 #include "cpu/cw_ssim_ref.h"
 #include "gpu/fsim.h"
 #include "gpu/svd.h"
-
-cv::Mat ssim_ref(const IQM::Args& args) {
-    const cv::Mat image = imread(args.inputPath, cv::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::IMREAD_COLOR);
-
-    auto method = IQM::CPU::SSIM_Reference();
-
-    const auto start = std::chrono::high_resolution_clock::now();
-    auto out = method.computeMetric(image, ref);
-    const auto end = std::chrono::high_resolution_clock::now();
-
-    std::cout << "MSSIM: " << IQM::CPU::SSIM_Reference::computeMSSIM(out) << std::endl;
-
-    auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << execTime << std::endl;
-
-    cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
-    outEightBit = out * 255.0;
-
-    return outEightBit;
-}
 
 cv::Mat ssim(const IQM::Args& args) {
     const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
@@ -44,6 +22,11 @@ cv::Mat ssim(const IQM::Args& args) {
     cvtColor(ref, refAlpha, cv::COLOR_BGR2RGBA);
 
     const IQM::GPU::VulkanRuntime vulkan;
+
+    if (args.verbose) {
+        std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl;
+    }
+
     IQM::GPU::SSIM ssim(vulkan);
 
     // starts only in debug, needs to init after vulkan
@@ -59,8 +42,14 @@ cv::Mat ssim(const IQM::Args& args) {
 
     std::cout << "MSSIM: " << result.mssim << std::endl;
 
-    auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << execTime << std::endl;
+    if (args.verbose) {
+        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << execTime << std::endl;
+        for (const auto& [name, time] : result.timestamps.inner) {
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            std::cout << name << ": " << duration << std::endl;
+        }
+    }
 
     cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
     outEightBit = result.image * 255.0;
@@ -78,8 +67,10 @@ cv::Mat cw_ssim_ref(const IQM::Args& args) {
     auto out = method.computeMetric(image, ref);
     const auto end = std::chrono::high_resolution_clock::now();
 
-    auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << execTime << std::endl;
+    if (args.verbose) {
+        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << execTime << std::endl;
+    }
 
     return out;
 }
@@ -97,20 +88,33 @@ cv::Mat svd(const IQM::Args& args) {
     const IQM::GPU::VulkanRuntime vulkan;
     IQM::GPU::SVD svd(vulkan);
 
+    if (args.verbose) {
+        std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl;
+    }
+
     // starts only in debug, needs to init after vulkan
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto out = svd.computeMetric(vulkan, imageAlpha, refAlpha);
+    auto result = svd.computeMetric(vulkan, imageAlpha, refAlpha);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
     finishRenderDoc();
 
-    auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << execTime << std::endl;
+    std::cout << "M-SVD: " << result.msvd << std::endl;
 
-    return out;
+    if (args.verbose) {
+        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << execTime << std::endl;
+
+        for (const auto& [name, time] : result.timestamps.inner) {
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            std::cout << name << ": " << duration << std::endl;
+        }
+    }
+
+    return result.image;
 }
 
 cv::Mat fsim(const IQM::Args& args) {
@@ -126,32 +130,42 @@ cv::Mat fsim(const IQM::Args& args) {
     const IQM::GPU::VulkanRuntime vulkan;
     IQM::GPU::FSIM fsim(vulkan);
 
+    if (args.verbose) {
+        std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl;
+    }
+
     // starts only in debug, needs to init after vulkan
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto out = fsim.computeMetric(vulkan, imageAlpha, refAlpha);
+    auto result = fsim.computeMetric(vulkan, imageAlpha, refAlpha);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
     finishRenderDoc();
 
-    auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-    std::cout << execTime << std::endl;
+    if (args.verbose) {
+        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        std::cout << execTime << std::endl;
 
-    return out;
+        for (const auto& [name, time] : result.timestamps.inner) {
+            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            std::cout << name << ": " << duration << std::endl;
+        }
+    }
+
+    return result.image;
 }
 
 int main(int argc, const char **argv) {
     auto args = IQM::Args(argc, argv);
-    std::cout << "Selected method: " << IQM::method_name(args.method) << std::endl;
+    if (args.verbose) {
+        std::cout << "Selected method: " << IQM::method_name(args.method) << std::endl;
+    }
 
     cv::Mat out;
 
     switch (args.method) {
-        case IQM::Method::SSIM_CPU:
-            out = ssim_ref(args);
-            break;
         case IQM::Method::SSIM:
             out = ssim(args);
             break;

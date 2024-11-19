@@ -43,22 +43,38 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     this->pipelineLowpassFilter = runtime.createComputePipeline(this->lowpassFilterKernel, this->layoutLowpassFilter);
 }
 
-cv::Mat IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
     assert(image.rows == ref.rows);
     assert(image.cols == ref.cols);
 
+    FSIMResult result;
+
     const int F = computeDownscaleFactor(image.cols, image.rows);
 
+    result.timestamps.mark("downscale factor computed");
+
     this->sendImagesToGpu(runtime, image, ref);
+
+    result.timestamps.mark("images sent to gpu");
 
     const auto widthDownscale = static_cast<int>(std::round(static_cast<float>(image.cols) / static_cast<float>(F)));
     const auto heightDownscale = static_cast<int>(std::round(static_cast<float>(image.rows) / static_cast<float>(F)));
 
     this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
     this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
+
+    result.timestamps.mark("images downscaled");
+
     this->createLowpassFilter(runtime, widthDownscale, heightDownscale);
 
-    return image;
+    result.timestamps.mark("lowpass filter computed");
+
+    result.image = image;
+
+    result.fsim = 0.5;
+    result.fsimc = 0.6;
+
+    return result;
 }
 
 int IQM::GPU::FSIM::computeDownscaleFactor(const int cols, const int rows) {

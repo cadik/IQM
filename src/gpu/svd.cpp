@@ -1,6 +1,5 @@
 #include "svd.h"
 
-#include <iostream>
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
 
@@ -23,7 +22,9 @@ IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 }
 
-cv::Mat IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+    SVDResult res;
+
     auto bufSize = 2 * 8 * (image.cols / 8) * (image.rows / 8);
     auto outBufSize = (image.cols / 8) * (image.rows / 8);
     std::vector<float> data(bufSize);
@@ -55,6 +56,8 @@ cv::Mat IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat
             memcpy(data.data() + (start + 1) * 8, refSvd.data, 8 * sizeof(float));
         }
     }
+
+    res.timestamps.mark("end SVD compute");
 
     void * inBufData = this->stgMemory.mapMemory(0, bufSize * sizeof(float), {});
     memcpy(inBufData, data.data(), bufSize * sizeof(float));
@@ -92,6 +95,8 @@ cv::Mat IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat
     runtime._queue.submit(submitInfo, *fence);
     runtime._device.waitIdle();
 
+    res.timestamps.mark("GPU sum computed");
+
     this->copyFromGpu(runtime, outBufSize * sizeof(float));
 
     cv::Mat dummy;
@@ -100,25 +105,29 @@ cv::Mat IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat
     memcpy(dummy.data, outBufData, outBufSize * sizeof(float));
     this->stgMemory.unmapMemory();
 
+    res.timestamps.mark("end GPU writeback");
+
     std::vector<float> blocks((image.rows / 8) * (image.cols / 8));
     memcpy(blocks.data(), dummy.data, outBufSize * sizeof(float));
     std::ranges::sort(blocks);
 
     float middlePoint = blocks[blocks.size() / 2];
 
-    double sum = 0.0;
+    float sum = 0.0;
     for (float block : blocks) {
         sum += std::abs(block - middlePoint);
     }
-    std::cout << "M-SVD: " << sum / static_cast<double>(blocks.size()) << std::endl;
 
+    res.msvd = sum / static_cast<float>(blocks.size());
 
     // remap range of output image
     double min, max;
     cv::minMaxLoc(dummy, &min, &max);
     dummy.forEach<float>([max](float& i, const int []) {i = (i / static_cast<float>(max)) * 255.0f;});
 
-    return dummy;
+    res.image = dummy;
+
+    return res;
 }
 
 void IQM::GPU::SVD::prepareBuffers(const VulkanRuntime &runtime, size_t sizeInput, size_t sizeOutput) {

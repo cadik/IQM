@@ -1,16 +1,23 @@
 #ifndef SVD_H
 #define SVD_H
 
+#include <vector>
 #include <opencv2/core/mat.hpp>
 
-#include "img_params.h"
 #include "base/vulkan_runtime.h"
+#include "../timestamps.h"
 
 namespace IQM::GPU {
+    struct SVDResult {
+        cv::Mat image;
+        float msvd;
+        Timestamps timestamps;
+    };
+
     class SVD {
     public:
         explicit SVD(const VulkanRuntime &runtime);
-        cv::Mat computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        SVDResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
 
     private:
         void prepareBuffers(const VulkanRuntime &runtime, size_t sizeInput, size_t sizeOutput);

@@ -1,15 +1,18 @@
 #ifndef SSIM_H
 #define SSIM_H
 
+#include <vector>
 #include <opencv2/core/mat.hpp>
 
 #include "img_params.h"
 #include "base/vulkan_runtime.h"
+#include "../timestamps.h"
 
 namespace IQM::GPU {
     struct SSIMResult {
         cv::Mat image;
         float mssim;
+        Timestamps timestamps;
     };
 
     class SSIM {

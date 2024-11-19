@@ -48,6 +48,10 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
 }
 
 IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
+    SSIMResult res;
+
+    res.timestamps.mark("start GPU pipeline");
+
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
@@ -158,6 +162,8 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     runtime._queue.submit(submitInfo, *fence);
     runtime._device.waitIdle();
 
+    res.timestamps.mark("end GPU pipeline");
+
     const auto size = this->imageParameters.height * this->imageParameters.width * sizeof(float);
     auto [stgBuf, stgMem] = runtime.createBuffer(
         size,
@@ -201,17 +207,20 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     runtime._queue.submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
+    res.timestamps.mark("end GPU writeback");
+
     cv::Mat image;
     image.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
     void * outBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * sizeof(float), {});
     memcpy(image.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
-    float mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
+    res.mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
     stgMem.unmapMemory();
 
-    return SSIMResult {
-        .image = image,
-        .mssim = mssim
-    };
+    res.timestamps.mark("end MSSIM compute");
+
+    res.image = image;
+
+    return res;
 }
 
 void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
