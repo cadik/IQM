@@ -1,6 +1,5 @@
 #include "fsim.h"
-
-#include "img_params.h"
+#include "../img_params.h"
 
 IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
@@ -68,6 +67,8 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->createLowpassFilter(runtime, widthDownscale, heightDownscale);
 
     result.timestamps.mark("lowpass filter computed");
+
+    this->computeFft(runtime, widthDownscale, heightDownscale);
 
     result.image = image;
 
@@ -371,4 +372,36 @@ void IQM::GPU::FSIM::createLowpassFilter(const VulkanRuntime &runtime, const int
 
     runtime._queue.submit(submitInfo, *fence);
     runtime._device.waitIdle();
+}
+
+void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, const int height) {
+    VkFFTApplication fftApp = {};
+
+    VkFFTConfiguration fftConfig = {};
+    fftConfig.FFTdim = 2;
+    fftConfig.size[0] = width;
+    fftConfig.size[1] = height;
+    uint64_t bufferSize = width * height * sizeof(float);
+    fftConfig.bufferSize = &bufferSize;
+
+    VkDevice deviceRef = *runtime._device;
+    VkPhysicalDevice physDeviceRef = *runtime._physicalDevice;
+    VkQueue queueRef = *runtime._queue;
+    VkCommandPool cmdPoolRef = *runtime._commandPool;
+    fftConfig.physicalDevice = &physDeviceRef;
+    fftConfig.device = &deviceRef;
+    fftConfig.queue = &queueRef;
+    fftConfig.commandPool = &cmdPoolRef;
+
+    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
+    VkFence fenceRef = *fence;
+    fftConfig.fence = &fenceRef;
+
+    if (auto res = initializeVkFFT(&fftApp, fftConfig); res != VKFFT_SUCCESS) {
+        throw std::runtime_error("failed to initialize FFT");
+    }
+
+
+
+    deleteVkFFT(&fftApp);
 }

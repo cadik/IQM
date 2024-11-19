@@ -8,8 +8,11 @@
 #include "gpu/base/vulkan_runtime.h"
 #include "debug_utils.h"
 #include "cpu/cw_ssim_ref.h"
-#include "gpu/fsim.h"
 #include "gpu/svd.h"
+
+#if COMPILE_FSIM
+#include <fsim.h>
+#endif
 
 cv::Mat ssim(const IQM::Args& args) {
     const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
@@ -43,10 +46,10 @@ cv::Mat ssim(const IQM::Args& args) {
     std::cout << "MSSIM: " << result.mssim << std::endl;
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::cout << execTime << std::endl;
         for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
             std::cout << name << ": " << duration << std::endl;
         }
     }
@@ -68,7 +71,7 @@ cv::Mat cw_ssim_ref(const IQM::Args& args) {
     const auto end = std::chrono::high_resolution_clock::now();
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::cout << execTime << std::endl;
     }
 
@@ -105,11 +108,11 @@ cv::Mat svd(const IQM::Args& args) {
     std::cout << "M-SVD: " << result.msvd << std::endl;
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::cout << execTime << std::endl;
 
         for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
             std::cout << name << ": " << duration << std::endl;
         }
     }
@@ -118,6 +121,7 @@ cv::Mat svd(const IQM::Args& args) {
 }
 
 cv::Mat fsim(const IQM::Args& args) {
+#ifdef COMPILE_FSIM
     const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
     const cv::Mat ref = imread(args.refPath, cv::ImreadModes::IMREAD_COLOR);
     cv::Mat imageAlpha;
@@ -145,16 +149,19 @@ cv::Mat fsim(const IQM::Args& args) {
     finishRenderDoc();
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::cout << execTime << std::endl;
 
         for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(time - start);
+            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
             std::cout << name << ": " << duration << std::endl;
         }
     }
 
     return result.image;
+#else
+    throw std::runtime_error("FSIM support was not compiled");
+#endif
 }
 
 int main(int argc, const char **argv) {
@@ -165,19 +172,24 @@ int main(int argc, const char **argv) {
 
     cv::Mat out;
 
-    switch (args.method) {
-        case IQM::Method::SSIM:
-            out = ssim(args);
+    try {
+        switch (args.method) {
+            case IQM::Method::SSIM:
+                out = ssim(args);
             break;
-        case IQM::Method::CW_SSIM_CPU:
-            out = cw_ssim_ref(args);
+            case IQM::Method::CW_SSIM_CPU:
+                out = cw_ssim_ref(args);
             break;
-        case IQM::Method::SVD:
-            out = svd(args);
+            case IQM::Method::SVD:
+                out = svd(args);
             break;
-        case IQM::Method::FSIM:
-            out = fsim(args);
+            case IQM::Method::FSIM:
+                out = fsim(args);
             break;
+        }
+    } catch (const std::exception& e) {
+        std::cerr << e.what() << std::endl;
+        exit(-1);
     }
 
     const auto outPath = args.outputPath.value_or("out.png");

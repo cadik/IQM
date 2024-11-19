@@ -1,10 +1,10 @@
 #ifndef FSIM_H
 #define FSIM_H
-#include <chrono>
 #include <opencv2/core/mat.hpp>
+#include <vkFFT.h>
 
-#include "../timestamps.h"
-#include "base/vulkan_runtime.h"
+#include "../../timestamps.h"
+#include "../base/vulkan_runtime.h"
 
 namespace IQM::GPU {
     struct FSIMResult {
@@ -20,6 +20,8 @@ namespace IQM::GPU {
         FSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
 
         bool doColorComparison = true;
+        int orientations = 4;
+        int scales = 4;
 
     private:
         static int computeDownscaleFactor(int cols, int rows);
@@ -27,6 +29,7 @@ namespace IQM::GPU {
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
         void createLowpassFilter(const VulkanRuntime & runtime, int, int);
+        void computeFft(const VulkanRuntime &runtime, int width, int height);
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
