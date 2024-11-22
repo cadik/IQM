@@ -21,7 +21,7 @@ void main() {
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
     ivec2 pos = ivec2(x, y);
 
-    if (x > imageSize(input_img).x || y > imageSize(input_img).y) {
+    if (x >= imageSize(input_img).x || y >= imageSize(input_img).y) {
         return;
     }
 

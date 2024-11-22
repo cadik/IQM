@@ -5,6 +5,7 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->lowpassFilterKernel = runtime.createShaderModule("../shaders_out/fsim_lowpassfilter.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
+    this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
 
     const std::vector layout_2 = {
         *runtime._descLayoutTwoImage,
@@ -14,12 +15,18 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
         *runtime._descLayoutOneImage,
     };
 
+    const std::vector layout_imbuf = {
+        *runtime._descLayoutImageBuffer,
+    };
+
     const std::vector allLayouts = {
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutOneImage,
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutTwoImage,
+        *runtime._descLayoutImageBuffer,
+        *runtime._descLayoutImageBuffer,
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
@@ -34,6 +41,8 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     this->descSetLowpassFilter = std::move(sets[2]);
     this->descSetGradientMapIn = std::move(sets[3]);
     this->descSetGradientMapRef = std::move(sets[4]);
+    this->descSetExtractLumaIn = std::move(sets[5]);
+    this->descSetExtractLumaRef = std::move(sets[6]);
 
     // 2x int - kernel size, retyped bool
     const auto downsampleRanges = VulkanRuntime::createPushConstantRange(sizeof(int) * 2);
@@ -47,6 +56,9 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
 
     this->layoutGradientMap = runtime.createPipelineLayout(layout_2, {});
     this->pipelineGradientMap = runtime.createComputePipeline(this->kernelGradientMap, this->layoutGradientMap);
+
+    this->layoutExtractLuma = runtime.createPipelineLayout(layout_imbuf, {});
+    this->pipelineExtractLuma = runtime.createComputePipeline(this->kernelExtractLuma, this->layoutExtractLuma);
 }
 
 IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
@@ -79,7 +91,7 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     result.timestamps.mark("gradient map computed");
 
-    this->computeFft(runtime, widthDownscale, heightDownscale);
+    this->computeFft(runtime, result, widthDownscale, heightDownscale);
 
     result.timestamps.mark("fft computed");
 
@@ -314,16 +326,7 @@ void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const
     runtime._cmd_buffer.pushConstants<int>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, values);
 
     //shader works in 8x8 tiles
-    constexpr unsigned tileSize = 8;
-
-    auto groupsX = width / tileSize;
-    if (width % tileSize != 0) {
-        groupsX++;
-    }
-    auto groupsY = height / tileSize;
-    if (height % tileSize != 0) {
-        groupsY++;
-    }
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
 
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
@@ -369,16 +372,7 @@ void IQM::GPU::FSIM::createLowpassFilter(const VulkanRuntime &runtime, const int
     runtime._cmd_buffer.pushConstants<float>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, values);
 
     //shader works in 16x16 tiles
-    constexpr unsigned tileSize = 16;
-
-    auto groupsX = width / tileSize;
-    if (width % tileSize != 0) {
-        groupsX++;
-    }
-    auto groupsY = height / tileSize;
-    if (height % tileSize != 0) {
-        groupsY++;
-    }
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
@@ -414,16 +408,7 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
     runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutGradientMap, 0, {this->descSetGradientMapIn}, {});
 
     //shader works in 8x8 tiles
-    constexpr unsigned tileSize = 8;
-
-    auto groupsX = width / tileSize;
-    if (width % tileSize != 0) {
-        groupsX++;
-    }
-    auto groupsY = height / tileSize;
-    if (height % tileSize != 0) {
-        groupsY++;
-    }
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
 
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
@@ -450,14 +435,22 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
     runtime._device.waitIdle();
 }
 
-void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, const int height) {
+void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, const int width, const int height) {
+    uint64_t bufferSize = width * height * sizeof(float);
+
+    auto [fftBuf, fftMem] = runtime.createBuffer(
+        bufferSize,
+        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
+    );
+    fftBuf.bindMemory(fftMem, 0);
+
     VkFFTApplication fftApp = {};
 
     VkFFTConfiguration fftConfig = {};
     fftConfig.FFTdim = 2;
     fftConfig.size[0] = width;
     fftConfig.size[1] = height;
-    uint64_t bufferSize = width * height * sizeof(float);
     fftConfig.bufferSize = &bufferSize;
 
     VkDevice deviceRef = *runtime._device;
@@ -473,9 +466,133 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     VkFence fenceRef = *fence;
     fftConfig.fence = &fenceRef;
 
-    if (auto res = initializeVkFFT(&fftApp, fftConfig); res != VKFFT_SUCCESS) {
+    if (initializeVkFFT(&fftApp, fftConfig) != VKFFT_SUCCESS) {
         throw std::runtime_error("failed to initialize FFT");
     }
+
+    res.timestamps.mark("FFT lib initialized");
+
+    std::vector bufRef = {
+        vk::DescriptorBufferInfo{
+            .buffer = fftBuf,
+            .offset = 0,
+            .range = bufferSize,
+        }
+    };
+    auto imInfoInImage = VulkanRuntime::createImageInfos({
+        this->imageInputDownscaled,
+    });
+    const vk::WriteDescriptorSet writeSetInImage{
+        .dstSet = this->descSetExtractLumaIn,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = imInfoInImage.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    const vk::WriteDescriptorSet writeSetInBuf{
+        .dstSet = this->descSetExtractLumaIn,
+        .dstBinding = 1,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .pImageInfo = nullptr,
+        .pBufferInfo = bufRef.data(),
+        .pTexelBufferView = nullptr,
+    };
+
+    auto imInfoRefImage = VulkanRuntime::createImageInfos({
+        this->imageRefDownscaled,
+    });
+    const vk::WriteDescriptorSet writeSetRefImage{
+        .dstSet = this->descSetExtractLumaRef,
+        .dstBinding = 0,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = imInfoRefImage.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    const vk::WriteDescriptorSet writeSetRefBuf{
+        .dstSet = this->descSetExtractLumaRef,
+        .dstBinding = 1,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .pImageInfo = nullptr,
+        .pBufferInfo = bufRef.data(),
+        .pTexelBufferView = nullptr,
+    };
+
+    const std::vector writes = {
+        writeSetInImage, writeSetInBuf, writeSetRefImage, writeSetRefBuf
+    };
+
+    runtime._device.updateDescriptorSets(writes, nullptr);
+
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_buffer.begin(beginInfo);
+
+    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineExtractLuma);
+    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutExtractLuma, 0, {this->descSetExtractLumaIn}, {});
+
+    //shader works in 8x8 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
+    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+
+    std::vector barriers = {
+        vk::BufferMemoryBarrier{
+            .srcAccessMask = vk::AccessFlags{},
+            .dstAccessMask = vk::AccessFlags{},
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .buffer = fftBuf,
+            .offset = 0,
+            .size = bufferSize,
+        }
+    };
+
+    runtime._cmd_buffer.pipelineBarrier(
+        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eComputeShader,
+        {},
+        nullptr,
+        barriers,
+        nullptr
+    );
+
+    VkFFTLaunchParams launchParams = {};
+    VkCommandBuffer cmdBuf = *runtime._cmd_buffer;
+    VkBuffer fftBufRef = *fftBuf;
+    launchParams.commandBuffer = &cmdBuf;
+    launchParams.buffer = &fftBufRef;
+
+    if (VkFFTAppend(&fftApp, -1, &launchParams) != VKFFT_SUCCESS) {
+        throw std::runtime_error("failed to append FFT");
+    }
+
+    runtime._cmd_buffer.end();
+
+    const std::vector cmdBufs = {
+        &*runtime._cmd_buffer
+    };
+
+    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
+    const vk::SubmitInfo submitInfo{
+        .pWaitDstStageMask = &mask,
+        .commandBufferCount = 1,
+        .pCommandBuffers = *cmdBufs.data()
+    };
+
+    runtime._queue.submit(submitInfo, *fence);
+    runtime._device.waitIdle();
 
     deleteVkFFT(&fftApp);
 }

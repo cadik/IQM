@@ -18,6 +18,18 @@ namespace IQM::GPU {
         void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
         static std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images);
+        static std::pair<uint32_t, uint32_t> compute2DGroupCounts(const int width, const int height, const int tileSize) {
+            auto groupsX = width / tileSize;
+            if (width % tileSize != 0) {
+                groupsX++;
+            }
+            auto groupsY = height / tileSize;
+            if (height % tileSize != 0) {
+                groupsY++;
+            }
+
+            return std::make_pair(groupsX, groupsY);
+        }
 
         std::string selectedDevice;
 
@@ -33,6 +45,7 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout _descLayoutTwoImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutOneImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutBuffer = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout _descLayoutImageBuffer = VK_NULL_HANDLE;
         vk::raii::DescriptorPool _descPool = VK_NULL_HANDLE;
     private:
         static std::vector<const char *> getLayers();

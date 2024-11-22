@@ -19,7 +19,7 @@ void main() {
     ivec2 pos = ivec2(x, y);
     ivec2 size = imageSize(filter_img);
 
-    if (x > size.x || y > size.y) {
+    if (x >= size.x || y >= size.y) {
         return;
     }
 

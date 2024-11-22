@@ -152,6 +152,20 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         },
     }));
 
+    this->_descLayoutImageBuffer = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
 
     std::vector poolSizes = {
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 8},
@@ -172,7 +186,8 @@ vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const std::st
     std::ifstream file(path, std::ios::ate | std::ios::binary);
 
     if (!file.is_open()) {
-        throw std::runtime_error("failed to open file!");
+        std::string message = "Failed to open shader file " + path;
+        throw std::runtime_error(message);
     }
 
     const size_t fileSize = file.tellg();

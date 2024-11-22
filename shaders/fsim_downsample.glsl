@@ -34,6 +34,10 @@ void main() {
     ivec2 size = imageSize(input_img);
     ivec2 pos = ivec2(x, y);
 
+    if (x >= size.x || y >= size.y) {
+        return;
+    }
+
     vec4 sum = vec4(0.0);
     float scaler = pow(push_consts.F, 2.0);
 

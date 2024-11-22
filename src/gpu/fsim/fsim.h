@@ -30,7 +30,7 @@ namespace IQM::GPU {
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
         void createLowpassFilter(const VulkanRuntime & runtime, int, int);
         void createGradientMap(const VulkanRuntime & runtime, int, int);
-        void computeFft(const VulkanRuntime &runtime, int width, int height);
+        void computeFft(const VulkanRuntime &runtime, FSIMResult &res, int width, int height);
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
@@ -59,6 +59,13 @@ namespace IQM::GPU {
 
         std::shared_ptr<VulkanImage> imageGradientMapInput;
         std::shared_ptr<VulkanImage> imageGradientMapRef;
+
+        // extract luma for FFT library pass
+        vk::raii::PipelineLayout layoutExtractLuma = VK_NULL_HANDLE;
+        vk::raii::Pipeline pipelineExtractLuma = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSetExtractLumaIn = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSetExtractLumaRef = VK_NULL_HANDLE;
+        vk::raii::ShaderModule kernelExtractLuma = VK_NULL_HANDLE;
     };
 }
 

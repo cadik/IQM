@@ -27,6 +27,10 @@ void main() {
     ivec2 size = imageSize(input_img);
     ivec2 pos = ivec2(x, y);
 
+    if (x >= size.x || y >= size.y) {
+        return;
+    }
+
     float vertSum = 0.0;
     float horSum = 0.0;
 

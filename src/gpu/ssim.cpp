@@ -61,16 +61,7 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutLumapack, 0, {this->descSetLumapack}, {});
 
     //shaders work in 16x16 tiles
-    constexpr unsigned tileSize = 16;
-
-    auto groupsX = this->imageParameters.width / tileSize;
-    if (this->imageParameters.width % tileSize != 0) {
-        groupsX++;
-    }
-    auto groupsY = this->imageParameters.height / tileSize;
-    if (this->imageParameters.height % tileSize != 0) {
-        groupsY++;
-    }
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
 
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
