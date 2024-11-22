@@ -323,7 +323,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     runtime._queue.submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
-    auto imageInfos = createImageInfos({
+    auto imageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,
         this->imageLumaBlurred,
         this->imageOut,
@@ -340,7 +340,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .pTexelBufferView = nullptr,
     };
 
-    auto lumapackImageInfos = createImageInfos({
+    auto lumapackImageInfos = VulkanRuntime::createImageInfos({
         this->imageInput,
         this->imageRef,
         this->imageLuma,
@@ -357,7 +357,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .pTexelBufferView = nullptr,
     };
 
-    auto gaussInputImageInfos = createImageInfos({
+    auto gaussInputImageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,
         this->imageLumaBlurred,
     });
@@ -391,18 +391,4 @@ double IQM::GPU::SSIM::computeMSSIM(const float* buffer, unsigned width, unsigne
     }
 
     return sum / static_cast<double>((widthEnd - start + 1) * (heightEnd - start + 1));
-}
-
-std::vector<vk::DescriptorImageInfo> IQM::GPU::createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images) {
-    std::vector<vk::DescriptorImageInfo> vec(images.size());
-
-    for (size_t i = 0; i < vec.size(); i++) {
-        vec[i] = vk::DescriptorImageInfo {
-            .sampler = nullptr,
-            .imageView = images[i]->imageView,
-            .imageLayout = vk::ImageLayout::eGeneral,
-        };
-    }
-
-    return vec;
 }

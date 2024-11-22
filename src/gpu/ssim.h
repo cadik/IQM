@@ -50,8 +50,6 @@ namespace IQM::GPU {
         std::shared_ptr<VulkanImage> imageLumaBlurred;
         std::shared_ptr<VulkanImage> imageOut;
     };
-
-    std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>>& images);
 }
 
 #endif //SSIM_H

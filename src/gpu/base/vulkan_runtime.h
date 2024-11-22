@@ -17,6 +17,7 @@ namespace IQM::GPU {
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
         void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
+        static std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images);
 
         std::string selectedDevice;
 

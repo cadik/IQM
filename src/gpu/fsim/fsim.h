@@ -29,6 +29,7 @@ namespace IQM::GPU {
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
         void createLowpassFilter(const VulkanRuntime & runtime, int, int);
+        void createGradientMap(const VulkanRuntime & runtime, int, int);
         void computeFft(const VulkanRuntime &runtime, int width, int height);
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
@@ -37,17 +38,27 @@ namespace IQM::GPU {
         vk::raii::DescriptorSet descSetDownscaleIn = VK_NULL_HANDLE;
         vk::raii::DescriptorSet descSetDownscaleRef = VK_NULL_HANDLE;
 
-        VulkanImage imageInput;
-        VulkanImage imageRef;
+        std::shared_ptr<VulkanImage> imageInput;
+        std::shared_ptr<VulkanImage> imageRef;
 
-        VulkanImage imageInputDownscaled;
-        VulkanImage imageRefDownscaled;
-        VulkanImage imageLowpassFilter;
+        std::shared_ptr<VulkanImage> imageInputDownscaled;
+        std::shared_ptr<VulkanImage> imageRefDownscaled;
+        std::shared_ptr<VulkanImage> imageLowpassFilter;
 
         vk::raii::ShaderModule lowpassFilterKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutLowpassFilter = VK_NULL_HANDLE;
         vk::raii::Pipeline pipelineLowpassFilter = VK_NULL_HANDLE;
         vk::raii::DescriptorSet descSetLowpassFilter = VK_NULL_HANDLE;
+
+        // gradient map pass
+        vk::raii::PipelineLayout layoutGradientMap = VK_NULL_HANDLE;
+        vk::raii::Pipeline pipelineGradientMap = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSetGradientMapIn = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSetGradientMapRef = VK_NULL_HANDLE;
+        vk::raii::ShaderModule kernelGradientMap = VK_NULL_HANDLE;
+
+        std::shared_ptr<VulkanImage> imageGradientMapInput;
+        std::shared_ptr<VulkanImage> imageGradientMapRef;
     };
 }
 

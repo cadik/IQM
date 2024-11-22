@@ -46,12 +46,7 @@ cv::Mat ssim(const IQM::Args& args) {
     std::cout << "MSSIM: " << result.mssim << std::endl;
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        std::cout << execTime << std::endl;
-        for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
-            std::cout << name << ": " << duration << std::endl;
-        }
+        result.timestamps.print(start, end);
     }
 
     cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
@@ -108,13 +103,7 @@ cv::Mat svd(const IQM::Args& args) {
     std::cout << "M-SVD: " << result.msvd << std::endl;
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        std::cout << execTime << std::endl;
-
-        for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
-            std::cout << name << ": " << duration << std::endl;
-        }
+        result.timestamps.print(start, end);
     }
 
     return result.image;
@@ -149,13 +138,7 @@ cv::Mat fsim(const IQM::Args& args) {
     finishRenderDoc();
 
     if (args.verbose) {
-        auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
-        std::cout << execTime << std::endl;
-
-        for (const auto& [name, time] : result.timestamps.inner) {
-            auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
-            std::cout << name << ": " << duration << std::endl;
-        }
+        result.timestamps.print(start, end);
     }
 
     return result.image;
