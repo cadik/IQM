@@ -35,6 +35,7 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout _descLayoutBuffer = VK_NULL_HANDLE;
         vk::raii::DescriptorPool _descPool = VK_NULL_HANDLE;
     private:
+        static std::vector<const char *> getLayers();
         [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
     };
 }

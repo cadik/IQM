@@ -20,9 +20,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         .apiVersion = VK_API_VERSION_1_3,
     };
 
-    std::vector layers = {
-        LAYER_VALIDATION.c_str()
-    };
+    auto layers = getLayers();
 
     std::vector extensions = {
         VK_EXT_DEBUG_UTILS_EXTENSION_NAME
@@ -30,9 +28,9 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
     const vk::InstanceCreateInfo instanceCreateInfo{
         .pApplicationInfo = &appInfo,
-        .enabledLayerCount = 1,
+        .enabledLayerCount = static_cast<uint32_t>(layers.size()),
         .ppEnabledLayerNames = layers.data(),
-        .enabledExtensionCount = 1,
+        .enabledExtensionCount = static_cast<uint32_t>(extensions.size()),
         .ppEnabledExtensionNames = extensions.data()
     };
 
@@ -330,6 +328,23 @@ std::vector<vk::PushConstantRange> IQM::GPU::VulkanRuntime::createPushConstantRa
             .size = size,
         }
     };
+}
+
+std::vector<const char *> IQM::GPU::VulkanRuntime::getLayers() {
+    uint32_t layerCount;
+    vkEnumerateInstanceLayerProperties(&layerCount, nullptr);
+
+    std::vector<VkLayerProperties> availableLayers(layerCount);
+    vkEnumerateInstanceLayerProperties(&layerCount, availableLayers.data());
+
+    for (const auto layer : availableLayers) {
+        if (strcmp(layer.layerName,  LAYER_VALIDATION.c_str()) == 0) {
+            std::vector layers = {LAYER_VALIDATION.c_str()};
+            return layers;
+        }
+    }
+
+    return {};
 }
 
 vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const {
