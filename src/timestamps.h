@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef TIMESTAMPS_H
 #define TIMESTAMPS_H
 

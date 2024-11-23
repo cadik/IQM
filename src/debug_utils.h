@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef DEBUG_UTILS_H
 #define DEBUG_UTILS_H
 

@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #include "ssim.h"
 
 IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {

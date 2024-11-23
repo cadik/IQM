@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef VULKANRUNTIME_H
 #define VULKANRUNTIME_H
 

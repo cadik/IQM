@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #include "svd.h"
 
 #include <opencv2/core.hpp>

@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef IQM_ARGS_H
 #define IQM_ARGS_H
 

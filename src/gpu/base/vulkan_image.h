@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef VULKAN_IMAGE_H
 #define VULKAN_IMAGE_H
 

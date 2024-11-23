@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef CW_SSIM_REF_H
 #define CW_SSIM_REF_H
 

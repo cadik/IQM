@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #ifndef FSIM_H
 #define FSIM_H
 #include <opencv2/core/mat.hpp>

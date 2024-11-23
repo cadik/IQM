@@ -1,3 +1,8 @@
+/*
+* Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #include "args.h"
 
 IQM::Args::Args(const unsigned argc, const char *argv[]) {

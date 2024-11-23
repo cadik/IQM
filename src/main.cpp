@@ -1,3 +1,8 @@
+/*
+ * Image Quality Metrics
+ * Petr Volf - 2024
+ */
+
 #include <iostream>
 #include <chrono>
 
