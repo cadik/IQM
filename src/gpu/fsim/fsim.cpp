@@ -213,11 +213,16 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
     imageFloatInfo.format = vk::Format::eR32Sfloat;
     imageFloatInfo.usage = vk::ImageUsageFlagBits::eStorage;
 
+    vk::ImageCreateInfo imageFftInfo = {imageFloatInfo};
+    imageFftInfo.format = vk::Format::eR32G32Sfloat;
+
     this->imageInputDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
     this->imageRefDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
     this->imageLowpassFilter = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageGradientMapInput = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageGradientMapRef = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
+    this->imageFftInput = std::make_shared<VulkanImage>(runtime.createImage(imageFftInfo));
+    this->imageFftRef = std::make_shared<VulkanImage>(runtime.createImage(imageFftInfo));
 
     auto imageInfosInput = VulkanRuntime::createImageInfos({
         this->imageInput,
@@ -436,7 +441,7 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
 }
 
 void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, const int width, const int height) {
-    uint64_t bufferSize = width * height * sizeof(float);
+    uint64_t bufferSize = width * height * sizeof(float) * 2;
 
     auto [fftBuf, fftMem] = runtime.createBuffer(
         bufferSize,
@@ -568,6 +573,9 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
         nullptr
     );
 
+    runtime.setImageLayout(this->imageFftInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(this->imageFftRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+
     VkFFTLaunchParams launchParams = {};
     VkCommandBuffer cmdBuf = *runtime._cmd_buffer;
     VkBuffer fftBufRef = *fftBuf;
@@ -577,6 +585,19 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
     if (VkFFTAppend(&fftApp, -1, &launchParams) != VKFFT_SUCCESS) {
         throw std::runtime_error("failed to append FFT");
     }
+
+    std::vector regions = {
+        vk::BufferImageCopy{
+            .bufferOffset = 0,
+            .bufferRowLength = static_cast<uint32_t>(width),
+            .bufferImageHeight = static_cast<uint32_t>(height),
+            .imageSubresource = vk::ImageSubresourceLayers{.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+            .imageOffset = vk::Offset3D{0, 0, 0},
+            .imageExtent = vk::Extent3D{static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1}
+        }
+    };
+
+    runtime._cmd_buffer.copyBufferToImage(fftBuf, this->imageFftInput->image, vk::ImageLayout::eGeneral, regions);
 
     runtime._cmd_buffer.end();
 

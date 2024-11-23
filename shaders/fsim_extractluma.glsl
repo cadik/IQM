@@ -20,5 +20,6 @@ void main() {
         return;
     }
 
-    outData[x + size.x * y] = imageLoad(input_img, pos).z;
+    outData[(x + size.x * y) * 2] = imageLoad(input_img, pos).z;
+    outData[(x + size.x * y) * 2 + 1] = 0.0;
 }

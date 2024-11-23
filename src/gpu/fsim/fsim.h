@@ -66,6 +66,9 @@ namespace IQM::GPU {
         vk::raii::DescriptorSet descSetExtractLumaIn = VK_NULL_HANDLE;
         vk::raii::DescriptorSet descSetExtractLumaRef = VK_NULL_HANDLE;
         vk::raii::ShaderModule kernelExtractLuma = VK_NULL_HANDLE;
+
+        std::shared_ptr<VulkanImage> imageFftInput;
+        std::shared_ptr<VulkanImage> imageFftRef;
     };
 }
 
