@@ -1,23 +1,18 @@
 /*
-* Image Quality Metrics
+ * Image Quality Metrics
  * Petr Volf - 2024
  */
 
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
-    this->lowpassFilterKernel = runtime.createShaderModule("../shaders_out/fsim_lowpassfilter.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
 
     const std::vector layout_2 = {
         *runtime._descLayoutTwoImage,
-    };
-
-    const std::vector layout_1 = {
-        *runtime._descLayoutOneImage,
     };
 
     const std::vector layout_imbuf = {
@@ -27,7 +22,6 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     const std::vector allLayouts = {
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutTwoImage,
-        *runtime._descLayoutOneImage,
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutTwoImage,
         *runtime._descLayoutImageBuffer,
@@ -43,21 +37,16 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime) {
     auto sets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
     this->descSetDownscaleIn = std::move(sets[0]);
     this->descSetDownscaleRef = std::move(sets[1]);
-    this->descSetLowpassFilter = std::move(sets[2]);
-    this->descSetGradientMapIn = std::move(sets[3]);
-    this->descSetGradientMapRef = std::move(sets[4]);
-    this->descSetExtractLumaIn = std::move(sets[5]);
-    this->descSetExtractLumaRef = std::move(sets[6]);
+    this->descSetGradientMapIn = std::move(sets[2]);
+    this->descSetGradientMapRef = std::move(sets[3]);
+    this->descSetExtractLumaIn = std::move(sets[4]);
+    this->descSetExtractLumaRef = std::move(sets[5]);
 
     // 2x int - kernel size, retyped bool
     const auto downsampleRanges = VulkanRuntime::createPushConstantRange(sizeof(int) * 2);
-    // 1x float - cutoff, 1x int - order
-    const auto lowpassRanges = VulkanRuntime::createPushConstantRange(sizeof(int) + sizeof(float));
 
     this->layoutDownscale = runtime.createPipelineLayout(layout_2, downsampleRanges);
     this->pipelineDownscale = runtime.createComputePipeline(this->downscaleKernel, this->layoutDownscale);
-    this->layoutLowpassFilter = runtime.createPipelineLayout(layout_1, lowpassRanges);
-    this->pipelineLowpassFilter = runtime.createComputePipeline(this->lowpassFilterKernel, this->layoutLowpassFilter);
 
     this->layoutGradientMap = runtime.createPipelineLayout(layout_2, {});
     this->pipelineGradientMap = runtime.createComputePipeline(this->kernelGradientMap, this->layoutGradientMap);
@@ -88,7 +77,7 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     result.timestamps.mark("images downscaled");
 
-    this->createLowpassFilter(runtime, widthDownscale, heightDownscale);
+    this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
 
     result.timestamps.mark("lowpass filter computed");
 
@@ -223,7 +212,6 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
 
     this->imageInputDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
     this->imageRefDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
-    this->imageLowpassFilter = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageGradientMapInput = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageGradientMapRef = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageFftInput = std::make_shared<VulkanImage>(runtime.createImage(imageFftInfo));
@@ -237,10 +225,6 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
     auto imageInfosRef = VulkanRuntime::createImageInfos({
         this->imageRef,
         this->imageRefDownscaled,
-    });
-
-    auto imageInfosLPF = VulkanRuntime::createImageInfos({
-        this->imageLowpassFilter,
     });
 
     auto imageInfosGradIn = VulkanRuntime::createImageInfos({
@@ -275,17 +259,6 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
         .pTexelBufferView = nullptr,
     };
 
-    const vk::WriteDescriptorSet writeSetLPF{
-        .dstSet = this->descSetLowpassFilter,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfosLPF.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
-
     const vk::WriteDescriptorSet writeSetGradIn{
         .dstSet = this->descSetGradientMapIn,
         .dstBinding = 0,
@@ -309,7 +282,7 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
     };
 
     const std::vector writes = {
-        writeSetRef, writeSetInput, writeSetLPF, writeSetGradIn, writeSetGradRef
+        writeSetRef, writeSetInput, writeSetGradIn, writeSetGradRef
     };
 
     runtime._device.updateDescriptorSets(writes, nullptr);
@@ -341,49 +314,6 @@ void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
     runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutDownscale, 0, {this->descSetDownscaleRef}, {});
-    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer.end();
-
-    const std::vector cmdBufs = {
-        &*runtime._cmd_buffer
-    };
-
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
-    const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue.submit(submitInfo, *fence);
-    runtime._device.waitIdle();
-}
-
-void IQM::GPU::FSIM::createLowpassFilter(const VulkanRuntime &runtime, const int width, const int height) {
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer.begin(beginInfo);
-
-    runtime.setImageLayout(this->imageLowpassFilter->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineLowpassFilter);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutLowpassFilter, 0, {this->descSetLowpassFilter}, {});
-
-    int order = 15;
-
-    std::array<float, 2> values = {
-        0.45,
-        *reinterpret_cast<float *>(&order),
-    };
-    runtime._cmd_buffer.pushConstants<float>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, values);
-
-    //shader works in 16x16 tiles
-    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
-
     runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
 
     runtime._cmd_buffer.end();

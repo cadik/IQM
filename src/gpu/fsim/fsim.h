@@ -1,5 +1,5 @@
 /*
-* Image Quality Metrics
+ * Image Quality Metrics
  * Petr Volf - 2024
  */
 
@@ -10,6 +10,7 @@
 
 #include "../../timestamps.h"
 #include "../base/vulkan_runtime.h"
+#include "steps/fsim_lowpass_filter.h"
 
 namespace IQM::GPU {
     struct FSIMResult {
@@ -33,9 +34,10 @@ namespace IQM::GPU {
         void sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
-        void createLowpassFilter(const VulkanRuntime & runtime, int, int);
         void createGradientMap(const VulkanRuntime & runtime, int, int);
         void computeFft(const VulkanRuntime &runtime, FSIMResult &res, int width, int height);
+
+        FSIMLowpassFilter lowpassFilter;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
@@ -48,12 +50,6 @@ namespace IQM::GPU {
 
         std::shared_ptr<VulkanImage> imageInputDownscaled;
         std::shared_ptr<VulkanImage> imageRefDownscaled;
-        std::shared_ptr<VulkanImage> imageLowpassFilter;
-
-        vk::raii::ShaderModule lowpassFilterKernel = VK_NULL_HANDLE;
-        vk::raii::PipelineLayout layoutLowpassFilter = VK_NULL_HANDLE;
-        vk::raii::Pipeline pipelineLowpassFilter = VK_NULL_HANDLE;
-        vk::raii::DescriptorSet descSetLowpassFilter = VK_NULL_HANDLE;
 
         // gradient map pass
         vk::raii::PipelineLayout layoutGradientMap = VK_NULL_HANDLE;
