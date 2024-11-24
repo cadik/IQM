@@ -6,7 +6,7 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime, 4) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -74,19 +74,18 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
     this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
-
     result.timestamps.mark("images downscaled");
 
     this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
-
     result.timestamps.mark("lowpass filter computed");
 
     this->createGradientMap(runtime, widthDownscale, heightDownscale);
-
     result.timestamps.mark("gradient map computed");
 
-    this->computeFft(runtime, result, widthDownscale, heightDownscale);
+    this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
+    result.timestamps.mark("log gabor filters constructed");
 
+    this->computeFft(runtime, result, widthDownscale, heightDownscale);
     result.timestamps.mark("fft computed");
 
     result.image = image;
@@ -209,6 +208,7 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
 
     vk::ImageCreateInfo imageFftInfo = {imageFloatInfo};
     imageFftInfo.format = vk::Format::eR32G32Sfloat;
+    imageFftInfo.usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferDst;
 
     this->imageInputDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
     this->imageRefDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
@@ -380,7 +380,7 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
 
     auto [fftBuf, fftMem] = runtime.createBuffer(
         bufferSize,
-        vk::BufferUsageFlagBits::eStorageBuffer,
+        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
         vk::MemoryPropertyFlagBits::eDeviceLocal
     );
     fftBuf.bindMemory(fftMem, 0);

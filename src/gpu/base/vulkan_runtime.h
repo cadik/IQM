@@ -20,6 +20,7 @@ namespace IQM::GPU {
         [[nodiscard]] vk::raii::Pipeline createComputePipeline(const vk::raii::ShaderModule &shader, const vk::raii::PipelineLayout &layout) const;
         [[nodiscard]] std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(unsigned bufferSize, vk::BufferUsageFlags bufferFlags, vk::MemoryPropertyFlags memoryFlags) const;
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
+        [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
         void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
         static std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images);
@@ -54,7 +55,6 @@ namespace IQM::GPU {
         vk::raii::DescriptorPool _descPool = VK_NULL_HANDLE;
     private:
         static std::vector<const char *> getLayers();
-        [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
     };
 }
 

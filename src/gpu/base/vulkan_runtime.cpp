@@ -173,13 +173,13 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
     }));
 
     std::vector poolSizes = {
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 8},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 32},
         vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 8}
     };
 
     vk::DescriptorPoolCreateInfo dsCreateInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 8,
+        .maxSets = 16,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data()
     };

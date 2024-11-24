@@ -10,6 +10,7 @@
 
 #include "../../timestamps.h"
 #include "../base/vulkan_runtime.h"
+#include "steps/fsim_log_gabor.h"
 #include "steps/fsim_lowpass_filter.h"
 
 namespace IQM::GPU {
@@ -38,6 +39,7 @@ namespace IQM::GPU {
         void computeFft(const VulkanRuntime &runtime, FSIMResult &res, int width, int height);
 
         FSIMLowpassFilter lowpassFilter;
+        FSIMLogGabor logGaborFilter;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
