@@ -60,15 +60,15 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineLumapack);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutLumapack, 0, {this->descSetLumapack}, {});
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineLumapack);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutLumapack, 0, {this->descSetLumapack}, {});
 
     //shaders work in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
 
-    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
     vk::ImageMemoryBarrier imageMemoryBarrier = {
         .srcAccessMask = vk::AccessFlagBits::eShaderRead,
@@ -87,22 +87,22 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
         }
     };
 
-    runtime._cmd_buffer.pipelineBarrier(
+    runtime._cmd_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         vk::DependencyFlagBits::eDeviceGroup, {}, {}, imageMemoryBarrier
     );
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineGaussInput);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutGaussInput, 0, {this->descSetGaussInput}, {});
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineGaussInput);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutGaussInput, 0, {this->descSetGaussInput}, {});
 
     std::array valuesGauss = {
         this->kernelSize,
         *reinterpret_cast<int *>(&this->sigma)
     };
-    runtime._cmd_buffer.pushConstants<int>(this->layoutGaussInput, vk::ShaderStageFlagBits::eCompute, 0, valuesGauss);
+    runtime._cmd_buffer->pushConstants<int>(this->layoutGaussInput, vk::ShaderStageFlagBits::eCompute, 0, valuesGauss);
 
-    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
     vk::ImageMemoryBarrier gaussImageMemoryBarrier = {
         .srcAccessMask = vk::AccessFlagBits::eShaderRead,
@@ -121,14 +121,14 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
         }
     };
 
-    runtime._cmd_buffer.pipelineBarrier(
+    runtime._cmd_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         vk::DependencyFlagBits::eDeviceGroup, {}, {}, gaussImageMemoryBarrier
     );
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     std::array values = {
         this->kernelSize,
@@ -136,14 +136,14 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
         *reinterpret_cast<int *>(&this->k_2),
         *reinterpret_cast<int *>(&this->sigma)
     };
-    runtime._cmd_buffer.pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
+    runtime._cmd_buffer->pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
 
-    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_buffer
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
@@ -155,7 +155,7 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfo, *fence);
+    runtime._queue->submit(submitInfo, *fence);
     runtime._device.waitIdle();
 
     res.timestamps.mark("end GPU pipeline");
@@ -169,11 +169,10 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     stgBuf.bindMemory(stgMem, 0);
 
     // copy out
-    runtime._cmd_buffer.reset();
     const vk::CommandBufferBeginInfo beginInfoCopy = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfoCopy);
+    runtime._cmd_bufferTransfer->begin(beginInfoCopy);
 
     vk::BufferImageCopy copyRegion{
         .bufferOffset = 0,
@@ -183,12 +182,12 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
         .imageOffset = vk::Offset3D{0, 0, 0},
         .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
     };
-    runtime._cmd_buffer.copyImageToBuffer(this->imageOut->image,  vk::ImageLayout::eGeneral, stgBuf, copyRegion);
+    runtime._cmd_bufferTransfer->copyImageToBuffer(this->imageOut->image,  vk::ImageLayout::eGeneral, stgBuf, copyRegion);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_bufferTransfer->end();
 
     const std::vector cmdBufsCopy = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_bufferTransfer
     };
 
     auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eTransfer};
@@ -200,7 +199,7 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
 
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfoCopy, *fenceCopy);
+    runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
     res.timestamps.mark("end GPU writeback");
@@ -282,13 +281,13 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_bufferTransfer->begin(beginInfo);
 
-    runtime.setImageLayout(this->imageInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageOut->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageLuma->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(this->imageLumaBlurred->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageOut->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageLuma->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageLumaBlurred->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
     vk::BufferImageCopy copyRegion{
         .bufferOffset = 0,
@@ -298,13 +297,13 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .imageOffset = vk::Offset3D{0, 0, 0},
         .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
     };
-    runtime._cmd_buffer.copyBufferToImage(stgBuf, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
-    runtime._cmd_buffer.copyBufferToImage(stgRefBuf, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_bufferTransfer->copyBufferToImage(stgBuf, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_bufferTransfer->copyBufferToImage(stgRefBuf, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_bufferTransfer->end();
 
     const std::vector cmdBufsCopy = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_bufferTransfer
     };
 
     auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eAllCommands};
@@ -316,8 +315,8 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
 
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfoCopy, *fenceCopy);
-    runtime._device.waitIdle();
+    runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
+    runtime._device.waitForFences({fenceCopy}, true, std::numeric_limits<uint64_t>::max());
 
     auto imageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,

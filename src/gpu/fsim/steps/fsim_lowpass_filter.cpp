@@ -35,12 +35,12 @@ void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, 
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);
 
-    runtime.setImageLayout(this->imageLowpassFilter->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    runtime.setImageLayout(runtime._cmd_buffer, this->imageLowpassFilter->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     int order = 15;
 
@@ -48,17 +48,17 @@ void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, 
         0.45,
         *reinterpret_cast<float *>(&order),
     };
-    runtime._cmd_buffer.pushConstants<float>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
+    runtime._cmd_buffer->pushConstants<float>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
-    runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*runtime._cmd_buffer
+        &*(*runtime._cmd_buffer)
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
@@ -70,7 +70,7 @@ void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, 
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfo, *fence);
+    runtime._queue->submit(submitInfo, *fence);
     runtime._device.waitIdle();
 }
 

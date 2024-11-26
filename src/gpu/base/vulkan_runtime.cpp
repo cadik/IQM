@@ -62,161 +62,8 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
     this->_instance = vk::raii::Instance{this->_context, instanceCreateInfo};
 
-    std::optional<vk::raii::PhysicalDevice> physicalDevice;
-    uint32_t computeQueueIndex = 0;
-
-    auto devices = _instance.enumeratePhysicalDevices();
-    for (const auto& device : devices) {
-        auto properties = device.getProperties();
-
-        physicalDevice = device;
-
-        auto queueFamilyProperties = device.getQueueFamilyProperties();
-
-        int i = 0;
-        for (const auto& queueFamily : queueFamilyProperties) {
-            if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
-                computeQueueIndex = i;
-                break;
-            }
-
-            i++;
-        }
-
-        this->selectedDevice = std::string(properties.deviceName);
-        break;
-    }
-
-    this->_physicalDevice = physicalDevice.value();
-    this->_queueFamilyIndex = computeQueueIndex;
-
-    float queuePriority = 1.0f;
-    vk::DeviceQueueCreateInfo queueCreateInfo{
-        .queueFamilyIndex = computeQueueIndex,
-        .queueCount = 1,
-        .pQueuePriorities = &queuePriority,
-    };
-
-#ifdef PROFILE
-    std::vector deviceExtensions = {
-        VK_KHR_SWAPCHAIN_EXTENSION_NAME
-    };
-#else
-    std::vector<char*> deviceExtensions = {};
-#endif
-
-    const vk::DeviceCreateInfo deviceCreateInfo{
-        .queueCreateInfoCount = 1,
-        .pQueueCreateInfos = &queueCreateInfo,
-        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
-        .ppEnabledExtensionNames = deviceExtensions.data(),
-    };
-
-    this->_device = vk::raii::Device{this->_physicalDevice, deviceCreateInfo};
-    this->_queue = this->_device.getQueue(computeQueueIndex, 0);
-
-    vk::CommandPoolCreateInfo commandPoolCreateInfo{
-        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-        .queueFamilyIndex = computeQueueIndex,
-    };
-
-    this->_commandPool = vk::raii::CommandPool{this->_device, commandPoolCreateInfo};
-
-    vk::CommandBufferAllocateInfo commandBufferAllocateInfo{
-        .commandPool = this->_commandPool,
-        .commandBufferCount = 1,
-    };
-
-    this->_cmd_buffer = std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front());
-
-    this->_descLayoutThreeImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
-    }));
-
-    this->_descLayoutTwoImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-    }));
-
-    this->_descLayoutOneImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-    }));
-
-    this->_descLayoutBuffer = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-    }));
-
-    this->_descLayoutImageBuffer = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-    }));
-
-    std::vector poolSizes = {
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 32},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 8}
-    };
-
-    vk::DescriptorPoolCreateInfo dsCreateInfo{
-        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 16,
-        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
-        .pPoolSizes = poolSizes.data()
-    };
-
-    this->_descPool = std::move(vk::raii::DescriptorPool{this->_device, dsCreateInfo});
+    this->initQueues();
+    this->initDescriptors();
 }
 
 vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const std::string &path) const {
@@ -350,7 +197,7 @@ IQM::GPU::VulkanImage IQM::GPU::VulkanRuntime::createImage(const vk::ImageCreate
     };
 }
 
-void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const {
+void IQM::GPU::VulkanRuntime::setImageLayout(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const vk::raii::Image& image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const {
     vk::AccessFlags sourceAccessMask;
     vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
     vk::AccessFlags destinationAccessMask;
@@ -369,7 +216,7 @@ void IQM::GPU::VulkanRuntime::setImageLayout(const vk::raii::Image& image, vk::I
         .image = image,
         .subresourceRange = imageSubresourceRange
     };
-    return this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+    return cmd_buf->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
 }
 
 std::vector<vk::PushConstantRange> IQM::GPU::VulkanRuntime::createPushConstantRange(const unsigned size) {
@@ -407,7 +254,7 @@ void IQM::GPU::VulkanRuntime::createSwapchain(vk::SurfaceKHR surface) {
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    this->_cmd_buffer.begin(beginInfo);
+    this->_cmd_buffer->begin(beginInfo);
 
     vk::AccessFlags sourceAccessMask;
     vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
@@ -429,13 +276,13 @@ void IQM::GPU::VulkanRuntime::createSwapchain(vk::SurfaceKHR surface) {
             .image = image,
             .subresourceRange = imageSubresourceRange
         };
-        this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+        this->_cmd_buffer->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
     }
 
-    this->_cmd_buffer.end();
+    this->_cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*this->_cmd_buffer
+        &**this->_cmd_buffer
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
@@ -447,7 +294,7 @@ void IQM::GPU::VulkanRuntime::createSwapchain(vk::SurfaceKHR surface) {
 
     const vk::raii::Fence fence{this->_device, vk::FenceCreateInfo{}};
 
-    this->_queue.submit(submitInfo, *fence);
+    this->_queue->submit(submitInfo, *fence);
     this->_device.waitIdle();
 
     this->imageAvailableSemaphore = vk::raii::Semaphore{this->_device, vk::SemaphoreCreateInfo{}};
@@ -475,11 +322,11 @@ void IQM::GPU::VulkanRuntime::present(unsigned index) {
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    this->_cmd_buffer.begin(beginInfo);
-    this->_cmd_buffer.end();
+    this->_cmd_buffer->begin(beginInfo);
+    this->_cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*this->_cmd_buffer
+        &**this->_cmd_buffer
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eAllCommands};
@@ -491,7 +338,7 @@ void IQM::GPU::VulkanRuntime::present(unsigned index) {
         .pCommandBuffers = *cmdBufs.data(),
     };
 
-    this->_queue.submit(submitInfo, *this->swapchainFence);
+    this->_queue->submit(submitInfo, *this->swapchainFence);
 
     vk::PresentInfoKHR presentInfo{};
     vk::SwapchainKHR swapChains[] = {*this->swapchain};
@@ -499,12 +346,226 @@ void IQM::GPU::VulkanRuntime::present(unsigned index) {
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &index;
 
-    auto res = this->_queue.presentKHR(presentInfo);
+    auto res = this->_queue->presentKHR(presentInfo);
     if (res != vk::Result::eSuccess) {
         std::cout << "Failed to present" << std::endl;
     }
 }
 #endif
+
+void IQM::GPU::VulkanRuntime::initQueues() {
+    std::optional<vk::raii::PhysicalDevice> physicalDevice;
+    // try to access faster dedicated transfer queue
+    int computeQueueIndex = -1;
+    int transferQueueIndex = -1;
+
+    auto devices = _instance.enumeratePhysicalDevices();
+    for (const auto& device : devices) {
+        auto properties = device.getProperties();
+
+        physicalDevice = device;
+
+        auto queueFamilyProperties = device.getQueueFamilyProperties();
+
+        int i = 0;
+        for (const auto& queueFamily : queueFamilyProperties) {
+            if (!(queueFamily.queueFlags & vk::QueueFlagBits::eCompute) && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer && !(queueFamily.queueFlags & vk::QueueFlagBits::eGraphics)) {
+                transferQueueIndex = i;
+            }
+
+            if (queueFamily.queueFlags & vk::QueueFlagBits::eCompute && queueFamily.queueFlags & vk::QueueFlagBits::eTransfer && queueFamily.queueFlags & vk::QueueFlagBits::eGraphics) {
+                computeQueueIndex = i;
+            }
+
+            i++;
+        }
+
+        this->selectedDevice = std::string(properties.deviceName);
+        break;
+    }
+
+    this->_physicalDevice = physicalDevice.value();
+    this->_queueFamilyIndex = computeQueueIndex;
+    this->_transferQueueFamilyIndex = transferQueueIndex;
+
+    float queuePriority = 1.0f;
+
+    std::vector queues = {
+        vk::DeviceQueueCreateInfo{
+            .queueFamilyIndex = this->_queueFamilyIndex,
+            .queueCount = 1,
+            .pQueuePriorities = &queuePriority,
+        },
+        vk::DeviceQueueCreateInfo{
+            .queueFamilyIndex = this->_transferQueueFamilyIndex,
+            .queueCount = 1,
+            .pQueuePriorities = &queuePriority,
+        }
+    };
+
+    // no dedicated transfer queue found
+    bool dedicatedTransferQueue = true;
+    if (this->_transferQueueFamilyIndex == -1) {
+        dedicatedTransferQueue = false;
+        this->_transferQueueFamilyIndex = this->_queueFamilyIndex;
+
+        queues = {
+            vk::DeviceQueueCreateInfo{
+                .queueFamilyIndex = this->_queueFamilyIndex,
+                .queueCount = 1,
+                .pQueuePriorities = &queuePriority,
+            },
+        };
+    }
+
+#ifdef PROFILE
+    std::vector deviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+#else
+    std::vector<char*> deviceExtensions = {};
+#endif
+
+    const vk::DeviceCreateInfo deviceCreateInfo{
+        .queueCreateInfoCount = static_cast<uint32_t>(queues.size()),
+        .pQueueCreateInfos = queues.data(),
+        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
+    };
+
+    this->_device = vk::raii::Device{this->_physicalDevice, deviceCreateInfo};
+    this->_queue = std::make_shared<vk::raii::Queue>(this->_device.getQueue(this->_queueFamilyIndex, 0));
+
+    if (dedicatedTransferQueue) {
+        this->_transferQueue = std::make_shared<vk::raii::Queue>(this->_device.getQueue(this->_transferQueueFamilyIndex, 0));
+    } else {
+        this->_transferQueue = this->_queue;
+    }
+
+    vk::CommandPoolCreateInfo commandPoolCreateInfo{
+        .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+        .queueFamilyIndex = static_cast<unsigned>(computeQueueIndex),
+    };
+
+    this->_commandPool = std::make_shared<vk::raii::CommandPool>(vk::raii::CommandPool{this->_device, commandPoolCreateInfo});
+
+    vk::CommandBufferAllocateInfo commandBufferAllocateInfo{
+        .commandPool = *this->_commandPool,
+        .commandBufferCount = 1,
+    };
+
+    this->_cmd_buffer = std::make_shared<vk::raii::CommandBuffer>(std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front()));
+
+    if (dedicatedTransferQueue) {
+        vk::CommandPoolCreateInfo commandPoolCreateInfoTransfer {
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = static_cast<unsigned>(transferQueueIndex),
+        };
+
+        this->_commandPoolTransfer = std::make_shared<vk::raii::CommandPool>(vk::raii::CommandPool{this->_device, commandPoolCreateInfoTransfer});
+
+        commandBufferAllocateInfo = {
+            .commandPool = *this->_commandPoolTransfer,
+            .commandBufferCount = 1,
+        };
+
+        this->_cmd_bufferTransfer = std::make_shared<vk::raii::CommandBuffer>(std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front()));
+    } else {
+        this->_commandPoolTransfer = this->_commandPool;
+        this->_cmd_bufferTransfer = this->_cmd_buffer;
+    }
+}
+
+void IQM::GPU::VulkanRuntime::initDescriptors() {
+    this->_descLayoutThreeImage = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 2,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        }
+    }));
+
+    this->_descLayoutTwoImage = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
+
+    this->_descLayoutOneImage = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
+
+    this->_descLayoutBuffer = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
+
+    this->_descLayoutImageBuffer = std::move(this->createDescLayout({
+        vk::DescriptorSetLayoutBinding{
+            .binding = 0,
+            .descriptorType = vk::DescriptorType::eStorageImage,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 1,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+    }));
+
+    std::vector poolSizes = {
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 32},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 8}
+    };
+
+    vk::DescriptorPoolCreateInfo dsCreateInfo{
+        .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+        .maxSets = 16,
+        .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
+        .pPoolSizes = poolSizes.data()
+    };
+
+    this->_descPool = std::move(vk::raii::DescriptorPool{this->_device, dsCreateInfo});
+}
 
 std::vector<const char *> IQM::GPU::VulkanRuntime::getLayers() {
     uint32_t layerCount;

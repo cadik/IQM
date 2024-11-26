@@ -73,19 +73,19 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
-    runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     //shader takes 16 values, reduces to 1
     auto groupsX = bufSize / 16;
-    runtime._cmd_buffer.dispatch(groupsX, 1, 1);
+    runtime._cmd_buffer->dispatch(groupsX, 1, 1);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_buffer
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
@@ -97,7 +97,7 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfo, *fence);
+    runtime._queue->submit(submitInfo, *fence);
     runtime._device.waitIdle();
 
     res.timestamps.mark("GPU sum computed");
@@ -171,19 +171,19 @@ void IQM::GPU::SVD::copyToGpu(const VulkanRuntime &runtime, size_t sizeInput, si
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);
 
     vk::BufferCopy copyRegion{
         .srcOffset = 0,
         .dstOffset = 0,
         .size = sizeInput,
     };
-    runtime._cmd_buffer.copyBuffer(this->stgBuffer, this->inputBuffer, copyRegion);
+    runtime._cmd_buffer->copyBuffer(this->stgBuffer, this->inputBuffer, copyRegion);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufsCopy = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_buffer
     };
 
     auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eAllCommands};
@@ -195,7 +195,7 @@ void IQM::GPU::SVD::copyToGpu(const VulkanRuntime &runtime, size_t sizeInput, si
 
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfoCopy, *fenceCopy);
+    runtime._queue->submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
     std::vector bufInfos = {
@@ -226,23 +226,23 @@ void IQM::GPU::SVD::copyToGpu(const VulkanRuntime &runtime, size_t sizeInput, si
 }
 
 void IQM::GPU::SVD::copyFromGpu(const VulkanRuntime &runtime, size_t sizeOutput) {
-    runtime._cmd_buffer.reset();
+    runtime._cmd_buffer->reset();
     const vk::CommandBufferBeginInfo beginInfoCopy = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfoCopy);
+    runtime._cmd_buffer->begin(beginInfoCopy);
 
     vk::BufferCopy copyRegion{
         .srcOffset = 0,
         .dstOffset = 0,
         .size = sizeOutput,
     };
-    runtime._cmd_buffer.copyBuffer(this->outBuffer, this->stgBuffer, copyRegion);
+    runtime._cmd_buffer->copyBuffer(this->outBuffer, this->stgBuffer, copyRegion);
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufsCopy = {
-        &*runtime._cmd_buffer
+        &**runtime._cmd_buffer
     };
 
     auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eTransfer};
@@ -254,6 +254,6 @@ void IQM::GPU::SVD::copyFromGpu(const VulkanRuntime &runtime, size_t sizeOutput)
 
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfoCopy, *fenceCopy);
+    runtime._queue->submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 }

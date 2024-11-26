@@ -21,7 +21,7 @@ namespace IQM::GPU {
         [[nodiscard]] std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(unsigned bufferSize, vk::BufferUsageFlags bufferFlags, vk::MemoryPropertyFlags memoryFlags) const;
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
         [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
-        void setImageLayout(const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
+        void setImageLayout(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
         static std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images);
         static std::pair<uint32_t, uint32_t> compute2DGroupCounts(const int width, const int height, const int tileSize) {
@@ -44,10 +44,14 @@ namespace IQM::GPU {
         vk::raii::Instance _instance = VK_NULL_HANDLE;
         vk::raii::PhysicalDevice _physicalDevice = VK_NULL_HANDLE;
         vk::raii::Device _device = VK_NULL_HANDLE;
-        vk::raii::Queue _queue = VK_NULL_HANDLE;
+        std::shared_ptr<vk::raii::Queue> _queue = VK_NULL_HANDLE;
         uint32_t _queueFamilyIndex;
-        vk::raii::CommandPool _commandPool = VK_NULL_HANDLE;
-        vk::raii::CommandBuffer _cmd_buffer = VK_NULL_HANDLE;
+        std::shared_ptr<vk::raii::Queue> _transferQueue = VK_NULL_HANDLE;
+        uint32_t _transferQueueFamilyIndex;
+        std::shared_ptr<vk::raii::CommandPool> _commandPool = VK_NULL_HANDLE;
+        std::shared_ptr<vk::raii::CommandPool> _commandPoolTransfer = VK_NULL_HANDLE;
+        std::shared_ptr<vk::raii::CommandBuffer> _cmd_buffer = VK_NULL_HANDLE;
+        std::shared_ptr<vk::raii::CommandBuffer> _cmd_bufferTransfer = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutThreeImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutTwoImage = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutOneImage = VK_NULL_HANDLE;
@@ -65,6 +69,8 @@ namespace IQM::GPU {
         vk::raii::Fence swapchainFence = VK_NULL_HANDLE;
 #endif
     private:
+        void initQueues();
+        void initDescriptors();
         static std::vector<const char *> getLayers();
     };
 }

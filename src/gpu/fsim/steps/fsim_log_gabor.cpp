@@ -40,27 +40,27 @@ void IQM::GPU::FSIMLogGabor::constructFilter(const VulkanRuntime &runtime, const
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer.begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);
 
-    runtime._cmd_buffer.bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
 
 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
     for (unsigned scale = 0; scale < this->scales; scale++) {
-        runtime.setImageLayout(this->imageLogGaborFilters[scale]->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+        runtime.setImageLayout(runtime._cmd_buffer, this->imageLogGaborFilters[scale]->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
-        runtime._cmd_buffer.bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSets[scale]}, {});
-        runtime._cmd_buffer.pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, scale);
+        runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSets[scale]}, {});
+        runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, scale);
 
-        runtime._cmd_buffer.dispatch(groupsX, groupsY, 1);
+        runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
     }
 
-    runtime._cmd_buffer.end();
+    runtime._cmd_buffer->end();
 
     const std::vector cmdBufs = {
-        &*runtime._cmd_buffer
+        &*(*runtime._cmd_buffer)
     };
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
@@ -72,7 +72,7 @@ void IQM::GPU::FSIMLogGabor::constructFilter(const VulkanRuntime &runtime, const
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
-    runtime._queue.submit(submitInfo, *fence);
+    runtime._queue->submit(submitInfo, *fence);
     runtime._device.waitIdle();
 }
 
