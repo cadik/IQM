@@ -12,6 +12,7 @@
 #include "../base/vulkan_runtime.h"
 #include "steps/fsim_log_gabor.h"
 #include "steps/fsim_lowpass_filter.h"
+#include "steps/fsim_angular_filter.h"
 
 namespace IQM::GPU {
     struct FSIMResult {
@@ -36,10 +37,13 @@ namespace IQM::GPU {
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
         void createGradientMap(const VulkanRuntime & runtime, int, int);
+        void initFftLibrary(const VulkanRuntime &runtime, int width, int height);
+        void teardownFftLibrary();
         void computeFft(const VulkanRuntime &runtime, FSIMResult &res, int width, int height);
 
         FSIMLowpassFilter lowpassFilter;
         FSIMLogGabor logGaborFilter;
+        FSIMAngularFilter angularFilter;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
@@ -72,6 +76,10 @@ namespace IQM::GPU {
 
         std::shared_ptr<VulkanImage> imageFftInput;
         std::shared_ptr<VulkanImage> imageFftRef;
+
+        // FFT lib
+        VkFFTApplication fftApplication{};
+        vk::raii::Fence fftFence = VK_NULL_HANDLE;
     };
 }
 

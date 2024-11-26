@@ -6,7 +6,7 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime, 4) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime, scales), angularFilter(runtime, orientations) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -72,6 +72,9 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     const auto widthDownscale = static_cast<int>(std::round(static_cast<float>(image.cols) / static_cast<float>(F)));
     const auto heightDownscale = static_cast<int>(std::round(static_cast<float>(image.rows) / static_cast<float>(F)));
 
+    this->initFftLibrary(runtime, widthDownscale, heightDownscale);
+    result.timestamps.mark("FFT library initialized");
+
     this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
     this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
     result.timestamps.mark("images downscaled");
@@ -85,6 +88,9 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
     result.timestamps.mark("log gabor filters constructed");
 
+    this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
+    result.timestamps.mark("angular filters constructed");
+
     this->computeFft(runtime, result, widthDownscale, heightDownscale);
     result.timestamps.mark("fft computed");
 
@@ -92,6 +98,8 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     result.fsim = 0.5;
     result.fsimc = 0.6;
+
+    this->teardownFftLibrary();
 
     return result;
 }
@@ -375,15 +383,8 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
     runtime._device.waitIdle();
 }
 
-void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, const int width, const int height) {
+void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int width, const int height) {
     uint64_t bufferSize = width * height * sizeof(float) * 2;
-
-    auto [fftBuf, fftMem] = runtime.createBuffer(
-        bufferSize,
-        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
-        vk::MemoryPropertyFlagBits::eDeviceLocal
-    );
-    fftBuf.bindMemory(fftMem, 0);
 
     VkFFTApplication fftApp = {};
 
@@ -402,15 +403,30 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
     fftConfig.queue = &queueRef;
     fftConfig.commandPool = &cmdPoolRef;
 
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-    VkFence fenceRef = *fence;
+    this->fftFence =  vk::raii::Fence{runtime._device, vk::FenceCreateInfo{}};
+    VkFence fenceRef = *this->fftFence;
     fftConfig.fence = &fenceRef;
 
     if (initializeVkFFT(&fftApp, fftConfig) != VKFFT_SUCCESS) {
         throw std::runtime_error("failed to initialize FFT");
     }
 
-    res.timestamps.mark("FFT lib initialized");
+    this->fftApplication = fftApp;
+}
+
+void IQM::GPU::FSIM::teardownFftLibrary() {
+    deleteVkFFT(&this->fftApplication);
+}
+
+void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, const int width, const int height) {
+    uint64_t bufferSize = width * height * sizeof(float) * 2;
+
+    auto [fftBuf, fftMem] = runtime.createBuffer(
+        bufferSize,
+        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
+    );
+    fftBuf.bindMemory(fftMem, 0);
 
     std::vector bufRef = {
         vk::DescriptorBufferInfo{
@@ -517,7 +533,7 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
     launchParams.commandBuffer = &cmdBuf;
     launchParams.buffer = &fftBufRef;
 
-    if (VkFFTAppend(&fftApp, -1, &launchParams) != VKFFT_SUCCESS) {
+    if (VkFFTAppend(&this->fftApplication, -1, &launchParams) != VKFFT_SUCCESS) {
         throw std::runtime_error("failed to append FFT");
     }
 
@@ -547,8 +563,7 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
         .pCommandBuffers = *cmdBufs.data()
     };
 
+    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
     runtime._queue.submit(submitInfo, *fence);
     runtime._device.waitIdle();
-
-    deleteVkFFT(&fftApp);
 }
