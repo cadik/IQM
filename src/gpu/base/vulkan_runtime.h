@@ -45,6 +45,7 @@ namespace IQM::GPU {
         vk::raii::PhysicalDevice _physicalDevice = VK_NULL_HANDLE;
         vk::raii::Device _device = VK_NULL_HANDLE;
         vk::raii::Queue _queue = VK_NULL_HANDLE;
+        uint32_t _queueFamilyIndex;
         vk::raii::CommandPool _commandPool = VK_NULL_HANDLE;
         vk::raii::CommandBuffer _cmd_buffer = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutThreeImage = VK_NULL_HANDLE;
@@ -53,6 +54,16 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout _descLayoutBuffer = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout _descLayoutImageBuffer = VK_NULL_HANDLE;
         vk::raii::DescriptorPool _descPool = VK_NULL_HANDLE;
+
+#ifdef PROFILE
+        void createSwapchain(vk::SurfaceKHR surface);
+        unsigned acquire();
+        void present(unsigned index);
+        vk::raii::SwapchainKHR swapchain = VK_NULL_HANDLE;
+        vk::raii::Semaphore imageAvailableSemaphore = VK_NULL_HANDLE;
+        vk::raii::Semaphore renderFinishedSemaphore = VK_NULL_HANDLE;
+        vk::raii::Fence swapchainFence = VK_NULL_HANDLE;
+#endif
     private:
         static std::vector<const char *> getLayers();
     };

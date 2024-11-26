@@ -12,6 +12,11 @@
 
 #include "vulkan_image.h"
 
+#ifdef PROFILE
+#define GLFW_INCLUDE_VULKAN
+#include <GLFW/glfw3.h>
+#endif
+
 const std::string LAYER_VALIDATION = "VK_LAYER_KHRONOS_validation";
 
 IQM::GPU::VulkanRuntime::VulkanRuntime() {
@@ -27,9 +32,25 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
 
     auto layers = getLayers();
 
+#ifdef PROFILE
     std::vector extensions = {
-        VK_EXT_DEBUG_UTILS_EXTENSION_NAME
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+        VK_KHR_SURFACE_EXTENSION_NAME,
     };
+
+    uint32_t extensionCount;
+    glfwGetRequiredInstanceExtensions(&extensionCount);
+    const char** glfwExtensions;
+    glfwExtensions = glfwGetRequiredInstanceExtensions(&extensionCount);
+    for (uint32_t i = 0; i < extensionCount; i++) {
+        extensions.push_back(glfwExtensions[i]);
+    }
+
+#else
+    std::vector extensions = {
+        VK_EXT_DEBUG_UTILS_EXTENSION_NAME,
+    };
+#endif
 
     const vk::InstanceCreateInfo instanceCreateInfo{
         .pApplicationInfo = &appInfo,
@@ -67,6 +88,7 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
     }
 
     this->_physicalDevice = physicalDevice.value();
+    this->_queueFamilyIndex = computeQueueIndex;
 
     float queuePriority = 1.0f;
     vk::DeviceQueueCreateInfo queueCreateInfo{
@@ -75,9 +97,19 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
         .pQueuePriorities = &queuePriority,
     };
 
+#ifdef PROFILE
+    std::vector deviceExtensions = {
+        VK_KHR_SWAPCHAIN_EXTENSION_NAME
+    };
+#else
+    std::vector<char*> deviceExtensions = {};
+#endif
+
     const vk::DeviceCreateInfo deviceCreateInfo{
         .queueCreateInfoCount = 1,
         .pQueueCreateInfos = &queueCreateInfo,
+        .enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+        .ppEnabledExtensionNames = deviceExtensions.data(),
     };
 
     this->_device = vk::raii::Device{this->_physicalDevice, deviceCreateInfo};
@@ -349,6 +381,130 @@ std::vector<vk::PushConstantRange> IQM::GPU::VulkanRuntime::createPushConstantRa
         }
     };
 }
+
+#if PROFILE
+void IQM::GPU::VulkanRuntime::createSwapchain(vk::SurfaceKHR surface) {
+    uint32_t queues[1] = {this->_queueFamilyIndex};
+
+    auto formats = this->_physicalDevice.getSurfaceFormatsKHR(surface);
+
+    auto cap = this->_physicalDevice.getSurfaceCapabilitiesKHR(surface);
+
+    vk::SwapchainCreateInfoKHR swapchainCreateInfo{
+        .surface = surface,
+        .minImageCount = cap.minImageCount + 1,
+        .imageFormat = formats[0].format,
+        .imageExtent = vk::Extent2D{.width = 1280, .height = 720},
+        .imageArrayLayers = 1,
+        .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
+        .queueFamilyIndexCount = 1,
+        .pQueueFamilyIndices = queues,
+        .presentMode = vk::PresentModeKHR::eImmediate,
+    };
+
+    this->swapchain = vk::raii::SwapchainKHR{this->_device, swapchainCreateInfo};
+
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    this->_cmd_buffer.begin(beginInfo);
+
+    vk::AccessFlags sourceAccessMask;
+    vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+    vk::AccessFlags destinationAccessMask;
+    vk::PipelineStageFlags destinationStage = vk::PipelineStageFlagBits::eHost;
+
+    vk::ImageAspectFlags aspectMask = vk::ImageAspectFlagBits::eColor;
+
+    vk::ImageSubresourceRange imageSubresourceRange(aspectMask, 0, 1, 0, 1);
+
+    for (const auto image: this->swapchain.getImages()) {
+        vk::ImageMemoryBarrier imageMemoryBarrier{
+            .srcAccessMask = sourceAccessMask,
+            .dstAccessMask = destinationAccessMask,
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::ePresentSrcKHR,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = image,
+            .subresourceRange = imageSubresourceRange
+        };
+        this->_cmd_buffer.pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+    }
+
+    this->_cmd_buffer.end();
+
+    const std::vector cmdBufs = {
+        &*this->_cmd_buffer
+    };
+
+    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
+    const vk::SubmitInfo submitInfo{
+        .pWaitDstStageMask = &mask,
+        .commandBufferCount = 1,
+        .pCommandBuffers = *cmdBufs.data()
+    };
+
+    const vk::raii::Fence fence{this->_device, vk::FenceCreateInfo{}};
+
+    this->_queue.submit(submitInfo, *fence);
+    this->_device.waitIdle();
+
+    this->imageAvailableSemaphore = vk::raii::Semaphore{this->_device, vk::SemaphoreCreateInfo{}};
+    this->renderFinishedSemaphore = vk::raii::Semaphore{this->_device, vk::SemaphoreCreateInfo{}};
+    this->swapchainFence = vk::raii::Fence{this->_device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled}};
+}
+
+unsigned IQM::GPU::VulkanRuntime::acquire() {
+    auto resWait = this->_device.waitForFences({this->swapchainFence}, true, std::numeric_limits<u_int64_t>::max());
+    if (resWait != vk::Result::eSuccess) {
+        std::cerr << "Failed to acquire swapchain fence" << std::endl;
+    }
+
+    this->_device.resetFences({this->swapchainFence});
+
+    auto[res, index] = this->swapchain.acquireNextImage(std::numeric_limits<u_int64_t>::max(), this->imageAvailableSemaphore, {});
+    if (res != vk::Result::eSuccess) {
+        std::cerr << "Failed to acquire swapchain image" << std::endl;
+    }
+
+    return index;
+}
+
+void IQM::GPU::VulkanRuntime::present(unsigned index) {
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    this->_cmd_buffer.begin(beginInfo);
+    this->_cmd_buffer.end();
+
+    const std::vector cmdBufs = {
+        &*this->_cmd_buffer
+    };
+
+    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eAllCommands};
+    const vk::SubmitInfo submitInfo{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*this->imageAvailableSemaphore,
+        .pWaitDstStageMask = &mask,
+        .commandBufferCount = 1,
+        .pCommandBuffers = *cmdBufs.data(),
+    };
+
+    this->_queue.submit(submitInfo, *this->swapchainFence);
+
+    vk::PresentInfoKHR presentInfo{};
+    vk::SwapchainKHR swapChains[] = {*this->swapchain};
+    presentInfo.swapchainCount = 1;
+    presentInfo.pSwapchains = swapChains;
+    presentInfo.pImageIndices = &index;
+
+    auto res = this->_queue.presentKHR(presentInfo);
+    if (res != vk::Result::eSuccess) {
+        std::cout << "Failed to present" << std::endl;
+    }
+}
+#endif
 
 std::vector<const char *> IQM::GPU::VulkanRuntime::getLayers() {
     uint32_t layerCount;

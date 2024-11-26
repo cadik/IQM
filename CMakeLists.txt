@@ -40,11 +40,37 @@ add_executable(${PROJECT_NAME} src/main.cpp
         src/gpu/base/vulkan_image.h
         src/timestamps.h)
 
+add_executable(${PROJECT_NAME}-profile src/profile.cpp
+        src/methods.h
+        src/args.cpp
+        src/args.h
+        src/methods.cpp
+        src/gpu/base/vulkan_runtime.cpp
+        src/gpu/base/vulkan_runtime.h
+        src/gpu/ssim.cpp
+        src/gpu/ssim.h
+        src/debug_utils.h
+        src/cpu/cw_ssim_ref.cpp
+        src/cpu/cw_ssim_ref.h
+        src/gpu/svd.cpp
+        src/gpu/svd.h
+        src/gpu/img_params.h
+        src/gpu/base/vulkan_image.h
+        src/timestamps.h)
+
+target_compile_definitions(${PROJECT_NAME}-profile PUBLIC PROFILE)
+
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DVK_API_VERSION=13)
 target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} Vulkan::Vulkan )
+target_compile_definitions(${PROJECT_NAME}-profile PUBLIC -DVK_API_VERSION=13)
+
+find_package(glfw3)
+target_link_libraries(${PROJECT_NAME}-profile ${OpenCV_LIBS} Vulkan::Vulkan glfw)
 if (FSIM)
     target_include_directories(${PROJECT_NAME} PUBLIC ${LIBRARY_ROOT}/VkFFT)
+    target_include_directories(${PROJECT_NAME}-profile PUBLIC ${LIBRARY_ROOT}/VkFFT)
     add_library(VkFFT INTERFACE)
     target_compile_definitions(VkFFT INTERFACE -DVKFFT_BACKEND=0)
     target_link_libraries(${PROJECT_NAME} IQM-FSIM VkFFT SPIRV glslang)
+    target_link_libraries(${PROJECT_NAME}-profile IQM-FSIM VkFFT SPIRV glslang)
 endif (FSIM)
