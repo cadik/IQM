@@ -43,12 +43,10 @@ void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, 
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     int order = 15;
+    float cutoff = 0.45;
 
-    std::array<float, 2> values = {
-        0.45,
-        *reinterpret_cast<float *>(&order),
-    };
-    runtime._cmd_buffer->pushConstants<float>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, values);
+    runtime._cmd_buffer->pushConstants<float>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, cutoff);
+    runtime._cmd_buffer->pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, sizeof(float), order);
 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);

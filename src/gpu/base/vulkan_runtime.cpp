@@ -553,8 +553,8 @@ void IQM::GPU::VulkanRuntime::initDescriptors() {
     }));
 
     std::vector poolSizes = {
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 32},
-        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 8}
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageImage, .descriptorCount = 128},
+        vk::DescriptorPoolSize{.type = vk::DescriptorType::eStorageBuffer, .descriptorCount = 32}
     };
 
     vk::DescriptorPoolCreateInfo dsCreateInfo{

@@ -6,7 +6,7 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime, scales), angularFilter(runtime, orientations) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -91,8 +91,11 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("angular filters constructed");
 
-    this->computeFft(runtime, result, widthDownscale, heightDownscale);
+    this->computeFft(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("fft computed");
+
+    this->combinations.combineFilters(runtime, this->angularFilter, this->logGaborFilter, widthDownscale, heightDownscale);
+    result.timestamps.mark("filters combined");
 
     result.image = image;
 
@@ -418,7 +421,7 @@ void IQM::GPU::FSIM::teardownFftLibrary() {
     deleteVkFFT(&this->fftApplication);
 }
 
-void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, const int width, const int height) {
+void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, const int height) {
     uint64_t bufferSize = width * height * sizeof(float) * 2;
 
     auto [fftBuf, fftMem] = runtime.createBuffer(
@@ -556,14 +559,12 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, FSIMResult &res, c
         &**runtime._cmd_buffer
     };
 
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
     const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
         .commandBufferCount = 1,
         .pCommandBuffers = *cmdBufs.data()
     };
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
     runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
+    runtime._device.waitForFences({fence}, true, std::numeric_limits<uint32_t>::max());
 }

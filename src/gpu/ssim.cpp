@@ -208,11 +208,11 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     image.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
     void * outBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * sizeof(float), {});
     memcpy(image.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
+    res.timestamps.mark("end copy from GPU");
+
     res.mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
-    stgMem.unmapMemory();
-
     res.timestamps.mark("end MSSIM compute");
-
+    stgMem.unmapMemory();
     res.image = image;
 
     return res;

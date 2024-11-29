@@ -11,10 +11,8 @@
 namespace IQM::GPU {
     class FSIMAngularFilter {
     public:
-        explicit FSIMAngularFilter(const VulkanRuntime &runtime, unsigned orientations);
+        explicit FSIMAngularFilter(const VulkanRuntime &runtime);
         void constructFilter(const VulkanRuntime &runtime, int width, int height);
-
-        unsigned orientations = 4;
 
         vk::raii::ShaderModule kernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layout = VK_NULL_HANDLE;

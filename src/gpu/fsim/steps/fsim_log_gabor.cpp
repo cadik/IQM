@@ -5,11 +5,13 @@
 
 #include "fsim_log_gabor.h"
 
-IQM::GPU::FSIMLogGabor::FSIMLogGabor(const VulkanRuntime &runtime, const unsigned scales) : scales(scales) {
+#include <fsim.h>
+
+IQM::GPU::FSIMLogGabor::FSIMLogGabor(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/fsim_log_gabor.spv");
 
     std::vector<vk::DescriptorSetLayout> totalLayouts;
-    for (unsigned i = 0; i < scales; i++) {
+    for (unsigned i = 0; i < FSIM_SCALES; i++) {
         totalLayouts.push_back(*runtime._descLayoutTwoImage);
     }
 
@@ -31,7 +33,7 @@ IQM::GPU::FSIMLogGabor::FSIMLogGabor(const VulkanRuntime &runtime, const unsigne
     this->layout = runtime.createPipelineLayout(layout, ranges);
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 
-    this->imageLogGaborFilters = std::vector<std::shared_ptr<VulkanImage>>(this->scales);
+    this->imageLogGaborFilters = std::vector<std::shared_ptr<VulkanImage>>(FSIM_SCALES);
 }
 
 void IQM::GPU::FSIMLogGabor::constructFilter(const VulkanRuntime &runtime, const std::shared_ptr<VulkanImage> &lowpass, int width, int height) {
@@ -48,7 +50,7 @@ void IQM::GPU::FSIMLogGabor::constructFilter(const VulkanRuntime &runtime, const
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
-    for (unsigned scale = 0; scale < this->scales; scale++) {
+    for (unsigned scale = 0; scale < FSIM_SCALES; scale++) {
         runtime.setImageLayout(runtime._cmd_buffer, this->imageLogGaborFilters[scale]->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
         runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSets[scale]}, {});
@@ -93,7 +95,7 @@ void IQM::GPU::FSIMLogGabor::prepareImageStorage(const VulkanRuntime &runtime, c
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
-    for (unsigned i = 0; i < this->scales; i++) {
+    for (unsigned i = 0; i < FSIM_SCALES; i++) {
         this->imageLogGaborFilters[i] = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
 
         auto imageInfosLowpass = VulkanRuntime::createImageInfos({lowpass});

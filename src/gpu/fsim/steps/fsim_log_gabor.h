@@ -11,10 +11,8 @@
 namespace IQM::GPU {
     class FSIMLogGabor {
     public:
-        explicit FSIMLogGabor(const VulkanRuntime &runtime, unsigned scales);
+        explicit FSIMLogGabor(const VulkanRuntime &runtime);
         void constructFilter(const VulkanRuntime &runtime, const std::shared_ptr<VulkanImage> &lowpass, int width, int height);
-
-        unsigned scales = 4;
 
         vk::raii::ShaderModule kernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layout = VK_NULL_HANDLE;

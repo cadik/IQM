@@ -5,11 +5,13 @@
 
 #include "fsim_angular_filter.h"
 
-IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime, const unsigned orientations) : orientations(orientations) {
+#include <fsim.h>
+
+IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/fsim_angular.spv");
 
     std::vector<vk::DescriptorSetLayout> totalLayouts;
-    for (unsigned i = 0; i < orientations; i++) {
+    for (unsigned i = 0; i < FSIM_ORIENTATIONS; i++) {
         totalLayouts.push_back(*runtime._descLayoutOneImage);
     }
 
@@ -31,7 +33,7 @@ IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime, con
     this->layout = runtime.createPipelineLayout(layout, ranges);
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 
-    this->imageAngularFilters = std::vector<std::shared_ptr<VulkanImage>>(this->orientations);
+    this->imageAngularFilters = std::vector<std::shared_ptr<VulkanImage>>(FSIM_ORIENTATIONS);
 }
 
 void IQM::GPU::FSIMAngularFilter::constructFilter(const VulkanRuntime &runtime, int width, int height) {
@@ -48,12 +50,12 @@ void IQM::GPU::FSIMAngularFilter::constructFilter(const VulkanRuntime &runtime, 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
-    for (unsigned orientation = 0; orientation < this->orientations; orientation++) {
+    for (unsigned orientation = 0; orientation < FSIM_ORIENTATIONS; orientation++) {
         runtime.setImageLayout(runtime._cmd_buffer, this->imageAngularFilters[orientation]->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
         runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSets[orientation]}, {});
         runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, orientation);
-        runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, sizeof(int), orientations);
+        runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, sizeof(int), FSIM_ORIENTATIONS);
 
         runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
     }
@@ -94,7 +96,7 @@ void IQM::GPU::FSIMAngularFilter::prepareImageStorage(const VulkanRuntime &runti
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
-    for (unsigned i = 0; i < this->orientations; i++) {
+    for (unsigned i = 0; i < FSIM_ORIENTATIONS; i++) {
         this->imageAngularFilters[i] = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
 
         auto imageInfos = VulkanRuntime::createImageInfos({this->imageAngularFilters[i]});

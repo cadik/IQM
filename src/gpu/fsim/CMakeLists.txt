@@ -8,6 +8,8 @@ add_library(IQM-FSIM STATIC fsim.cpp
         steps/fsim_log_gabor.h
         steps/fsim_angular_filter.cpp
         steps/fsim_angular_filter.h
+        steps/fsim_filter_combinations.cpp
+        steps/fsim_filter_combinations.h
 )
 
 target_include_directories(IQM-FSIM

@@ -13,8 +13,12 @@
 #include "steps/fsim_log_gabor.h"
 #include "steps/fsim_lowpass_filter.h"
 #include "steps/fsim_angular_filter.h"
+#include "steps/fsim_filter_combinations.h"
 
 namespace IQM::GPU {
+    constexpr int FSIM_ORIENTATIONS = 4;
+    constexpr int FSIM_SCALES = 4;
+
     struct FSIMResult {
         cv::Mat image;
         float fsim;
@@ -28,8 +32,6 @@ namespace IQM::GPU {
         FSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
 
         bool doColorComparison = true;
-        int orientations = 4;
-        int scales = 4;
 
     private:
         static int computeDownscaleFactor(int cols, int rows);
@@ -39,11 +41,12 @@ namespace IQM::GPU {
         void createGradientMap(const VulkanRuntime & runtime, int, int);
         void initFftLibrary(const VulkanRuntime &runtime, int width, int height);
         void teardownFftLibrary();
-        void computeFft(const VulkanRuntime &runtime, FSIMResult &res, int width, int height);
+        void computeFft(const VulkanRuntime &runtime, int width, int height);
 
         FSIMLowpassFilter lowpassFilter;
         FSIMLogGabor logGaborFilter;
         FSIMAngularFilter angularFilter;
+        FSIMFilterCombinations combinations;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;
