@@ -6,7 +6,7 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime), final_multiply(runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -97,10 +97,13 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->combinations.combineFilters(runtime, this->angularFilter, this->logGaborFilter, widthDownscale, heightDownscale);
     result.timestamps.mark("filters combined");
 
+    auto metrics = this->final_multiply.computeMetrics(runtime, widthDownscale, heightDownscale);
+    result.timestamps.mark("FSIM, FSIMc computed");
+
     result.image = image;
 
-    result.fsim = 0.5;
-    result.fsimc = 0.6;
+    result.fsim = metrics.first;
+    result.fsimc = metrics.second;
 
     this->teardownFftLibrary();
 

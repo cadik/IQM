@@ -14,6 +14,7 @@
 #include "steps/fsim_lowpass_filter.h"
 #include "steps/fsim_angular_filter.h"
 #include "steps/fsim_filter_combinations.h"
+#include "steps/fsim_final_multiply.h"
 
 namespace IQM::GPU {
     constexpr int FSIM_ORIENTATIONS = 4;
@@ -47,6 +48,7 @@ namespace IQM::GPU {
         FSIMLogGabor logGaborFilter;
         FSIMAngularFilter angularFilter;
         FSIMFilterCombinations combinations;
+        FSIMFinalMultiply final_multiply;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layoutDownscale = VK_NULL_HANDLE;

@@ -17,15 +17,24 @@ namespace IQM::GPU {
                             const FSIMLogGabor &logGabor,
                             int width, int height);
 
-
         vk::raii::ShaderModule multPackKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout multPacklayout = VK_NULL_HANDLE;
         vk::raii::Pipeline multPackPipeline = VK_NULL_HANDLE;
-        vk::raii::DescriptorSetLayout descSetLayout = VK_NULL_HANDLE;
-        vk::raii::DescriptorSet descSet = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout multPackDescSetLayout = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet multPackDescSet = VK_NULL_HANDLE;
 
         std::vector<vk::raii::Buffer> buffers;
         std::vector<vk::raii::DeviceMemory> memories;
+
+        // noise sum part
+        vk::raii::ShaderModule sumKernel = VK_NULL_HANDLE;
+        vk::raii::PipelineLayout sumLayout = VK_NULL_HANDLE;
+        vk::raii::Pipeline sumPipeline = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout sumDescSetLayout = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet sumDescSet = VK_NULL_HANDLE;
+
+        vk::raii::Buffer noiseLevels = VK_NULL_HANDLE;
+        vk::raii::DeviceMemory noiseLevelsMemory = VK_NULL_HANDLE;
     private:
         void prepareBufferStorage(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, int width, int height);
     };
