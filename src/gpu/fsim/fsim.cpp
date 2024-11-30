@@ -75,21 +75,64 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->initFftLibrary(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FFT library initialized");
 
-    this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
-    this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
-    result.timestamps.mark("images downscaled");
+    // parallel execution of these steps is possible, so use it
+    {
+        const vk::CommandBufferBeginInfo beginInfo = {
+            .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+        };
+        runtime._cmd_buffer->begin(beginInfo);
 
-    this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
-    result.timestamps.mark("lowpass filter computed");
+        this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
+        this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
+        this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
 
-    this->createGradientMap(runtime, widthDownscale, heightDownscale);
-    result.timestamps.mark("gradient map computed");
+        runtime._cmd_buffer->end();
 
-    this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
-    result.timestamps.mark("log gabor filters constructed");
+        const std::vector cmdBufs = {
+            &**runtime._cmd_buffer
+        };
 
-    this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
-    result.timestamps.mark("angular filters constructed");
+        const vk::SubmitInfo submitInfo{
+            .commandBufferCount = 1,
+            .pCommandBuffers = *cmdBufs.data()
+        };
+
+        const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
+
+        runtime._queue->submit(submitInfo, *fence);
+        runtime.waitForFence(fence);
+        result.timestamps.mark("images downscaled + lowpass filter computed");
+    }
+
+    // parallel execution of these steps is possible, so use it
+    {
+        const vk::CommandBufferBeginInfo beginInfo = {
+            .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+        };
+        runtime._cmd_buffer->begin(beginInfo);
+
+        this->createGradientMap(runtime, widthDownscale, heightDownscale);
+        this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
+        this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
+
+        runtime._cmd_buffer->end();
+
+        const std::vector cmdBufs = {
+            &**runtime._cmd_buffer
+        };
+
+        const vk::SubmitInfo submitInfo{
+            .commandBufferCount = 1,
+            .pCommandBuffers = *cmdBufs.data()
+        };
+
+        const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
+
+        runtime._queue->submit(submitInfo, *fence);
+        runtime.waitForFence(fence);
+
+        result.timestamps.mark("gradients, log gabor and angular filters computed");
+    }
 
     this->computeFft(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("fft computed");
@@ -196,7 +239,7 @@ void IQM::GPU::FSIM::sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
     runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
-    runtime._device.waitForFences({fenceCopy}, true, std::numeric_limits<unsigned>::max());
+    runtime.waitForFence(fenceCopy);
 }
 
 void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int width_downscale, int height_downscale) {
@@ -303,11 +346,6 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
 }
 
 void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const int F, const int width, const int height) {
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     runtime.setImageLayout(runtime._cmd_buffer, this->imageInputDownscaled->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
     runtime.setImageLayout(runtime._cmd_buffer, this->imageRefDownscaled->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
@@ -329,32 +367,9 @@ void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const
 
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutDownscale, 0, {this->descSetDownscaleRef}, {});
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
-    const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
 }
 
 void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, int height) {
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     runtime.setImageLayout(runtime._cmd_buffer, this->imageGradientMapInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
     runtime.setImageLayout(runtime._cmd_buffer, this->imageGradientMapRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
@@ -369,24 +384,6 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutGradientMap, 0, {this->descSetGradientMapRef}, {});
 
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
-    const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
 }
 
 void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int width, const int height) {
@@ -569,5 +566,5 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
 
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
     runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitForFences({fence}, true, std::numeric_limits<uint32_t>::max());
+    runtime.waitForFence(fence);
 }

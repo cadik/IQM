@@ -255,5 +255,5 @@ void IQM::GPU::SVD::copyFromGpu(const VulkanRuntime &runtime, size_t sizeOutput)
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
     runtime._queue->submit(submitInfoCopy, *fenceCopy);
-    runtime._device.waitIdle();
+    runtime.waitForFence(fenceCopy);
 }

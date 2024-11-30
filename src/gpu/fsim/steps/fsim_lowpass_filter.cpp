@@ -32,11 +32,6 @@ IQM::GPU::FSIMLowpassFilter::FSIMLowpassFilter(const VulkanRuntime &runtime) {
 void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, const int width, const int height) {
     this->prepareImageStorage(runtime, width, height);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     runtime.setImageLayout(runtime._cmd_buffer, this->imageLowpassFilter->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
@@ -52,24 +47,6 @@ void IQM::GPU::FSIMLowpassFilter::constructFilter(const VulkanRuntime &runtime, 
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &*(*runtime._cmd_buffer)
-    };
-
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
-    const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
 }
 
 void IQM::GPU::FSIMLowpassFilter::prepareImageStorage(const VulkanRuntime &runtime, int width, int height) {

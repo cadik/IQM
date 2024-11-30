@@ -125,7 +125,7 @@ void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runti
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
     runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitForFences({fence}, true, std::numeric_limits<uint64_t>::max());
+    runtime.waitForFence(fence);
 }
 
 void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, int width, int height) {

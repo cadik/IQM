@@ -39,13 +39,7 @@ IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime) {
 void IQM::GPU::FSIMAngularFilter::constructFilter(const VulkanRuntime &runtime, int width, int height) {
     this->prepareImageStorage(runtime, width, height);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
-
 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
@@ -59,24 +53,6 @@ void IQM::GPU::FSIMAngularFilter::constructFilter(const VulkanRuntime &runtime, 
 
         runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
     }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
-    const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
 }
 
 void IQM::GPU::FSIMAngularFilter::prepareImageStorage(const VulkanRuntime &runtime, int width, int height) {

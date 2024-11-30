@@ -83,9 +83,7 @@ std::pair<float, float> IQM::GPU::FSIMFinalMultiply::computeMetrics(const Vulkan
         &**runtime._cmd_buffer
     };
 
-    auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
     const vk::SubmitInfo submitInfo{
-        .pWaitDstStageMask = &mask,
         .commandBufferCount = 1,
         .pCommandBuffers = *cmdBufs.data()
     };
@@ -93,7 +91,7 @@ std::pair<float, float> IQM::GPU::FSIMFinalMultiply::computeMetrics(const Vulkan
     const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
 
     runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
+    runtime.waitForFence(fence);
 
     return {0.5, 0.5};
 }

@@ -142,6 +142,8 @@ cv::Mat fsim(const IQM::Args& args) {
     // saves capture for debugging
     finishRenderDoc();
 
+    std::cout << "FSIM: " << result.fsim << std::endl << "FSIMc: " << result.fsimc << std::endl;
+
     if (args.verbose) {
         result.timestamps.print(start, end);
     }

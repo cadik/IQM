@@ -606,3 +606,10 @@ std::vector<vk::DescriptorImageInfo> IQM::GPU::VulkanRuntime::createImageInfos(c
 
     return vec;
 }
+
+void IQM::GPU::VulkanRuntime::waitForFence(const vk::raii::Fence &fence) const {
+    auto res = this->_device.waitForFences({fence}, true, std::numeric_limits<uint64_t>::max());
+    if (res != vk::Result::eSuccess) {
+        throw std::runtime_error("Failed to wait for fence");
+    }
+}

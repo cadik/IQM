@@ -306,9 +306,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         &**runtime._cmd_bufferTransfer
     };
 
-    auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eAllCommands};
     const vk::SubmitInfo submitInfoCopy{
-        .pWaitDstStageMask = &maskCopy,
         .commandBufferCount = 1,
         .pCommandBuffers = *cmdBufsCopy.data()
     };
@@ -316,7 +314,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
 
     runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
-    runtime._device.waitForFences({fenceCopy}, true, std::numeric_limits<uint64_t>::max());
+    runtime.waitForFence(fenceCopy);
 
     auto imageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,

@@ -36,6 +36,7 @@ namespace IQM::GPU {
 
             return std::make_pair(groupsX, groupsY);
         }
+        void waitForFence(const vk::raii::Fence&) const;
 
         std::string selectedDevice;
 

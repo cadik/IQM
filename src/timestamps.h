@@ -28,11 +28,21 @@ public:
             longestName = std::max(longestName, static_cast<int>(name.length()));
         }
 
+        auto diffs = std::vector{
+            std::chrono::duration_cast<std::chrono::microseconds>(inner[0].second - start)
+        };
+        for (int i = 0; i < inner.size() - 1; i++) {
+            auto dur = std::chrono::duration_cast<std::chrono::microseconds>(inner[i + 1].second - inner[i].second);
+            diffs.push_back(dur);
+        }
+
         int timePad = static_cast<int>(std::ceil(std::log10(execTime.count()))) + 2;
 
-        for (const auto& [name, time] : inner) {
+        for (int i = 0; i < inner.size(); i++) {
+            const auto& [name, time] = inner.at(i);
+
             auto duration = std::chrono::duration_cast<std::chrono::microseconds>(time - start);
-            std::cout << std::setw(longestName) << name << ": " << std::setw(timePad) << duration << std::endl;
+            std::cout << std::setw(longestName) << name << ": " << std::setw(timePad) << duration << " | " << std::setw(timePad) << diffs.at(i) << std::endl;
         }
 
         std::cout << std::setw(longestName) << "TOTAL" << ": " << std::setw(timePad) << execTime << std::endl;
