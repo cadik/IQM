@@ -22,6 +22,7 @@ namespace IQM::GPU {
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
         [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
         void setImageLayout(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
+        static void initImages(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const std::vector<std::shared_ptr<VulkanImage>> &images);
         void nuke() const;
         static std::vector<vk::PushConstantRange> createPushConstantRange(unsigned size);
         static std::vector<vk::DescriptorImageInfo> createImageInfos(const std::vector<std::shared_ptr<VulkanImage>> &images);

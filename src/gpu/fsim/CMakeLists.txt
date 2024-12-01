@@ -12,6 +12,8 @@ add_library(IQM-FSIM STATIC fsim.cpp
         steps/fsim_filter_combinations.h
         steps/fsim_final_multiply.cpp
         steps/fsim_final_multiply.h
+        steps/fsim_sum_filter_responses.cpp
+        steps/fsim_sum_filter_responses.h
 )
 
 target_include_directories(IQM-FSIM

@@ -6,7 +6,7 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime), final_multiply(runtime) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime), sumFilterResponses(runtime), final_multiply(runtime) {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -130,6 +130,9 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     this->computeMassInverseFft(runtime, this->combinations.fftBuffer);
     result.timestamps.mark("mass ifft computed");
+
+    this->sumFilterResponses.computeSums(runtime, this->combinations.fftBuffer, widthDownscale, heightDownscale);
+    result.timestamps.mark("filter responses computed");
 
     auto metrics = this->final_multiply.computeMetrics(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FSIM, FSIMc computed");
@@ -542,11 +545,15 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutExtractLuma, 0, {this->descSetExtractLumaRef}, {});
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
+    vk::MemoryBarrier barrier{
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+    };
     runtime._cmd_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         {},
-        nullptr,
+        {barrier},
         nullptr,
         nullptr
     );

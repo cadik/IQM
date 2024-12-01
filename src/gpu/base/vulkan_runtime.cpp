@@ -219,6 +219,25 @@ void IQM::GPU::VulkanRuntime::setImageLayout(const std::shared_ptr<vk::raii::Com
     return cmd_buf->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
 }
 
+void IQM::GPU::VulkanRuntime::initImages(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const std::vector<std::shared_ptr<VulkanImage>>& images) {
+    vk::ImageAspectFlags aspectMask = vk::ImageAspectFlagBits::eColor;
+
+    std::vector<vk::ImageMemoryBarrier> barriers(images.size());
+
+    vk::ImageSubresourceRange imageSubresourceRange(aspectMask, 0, 1, 0, 1);
+    for (uint32_t i = 0; i < barriers.size(); i++) {
+        barriers[i] = vk::ImageMemoryBarrier{
+            .oldLayout = vk::ImageLayout::eUndefined,
+            .newLayout = vk::ImageLayout::eGeneral,
+            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+            .image = images[i]->image,
+            .subresourceRange = imageSubresourceRange
+        };
+    }
+    return cmd_buf->pipelineBarrier(vk::PipelineStageFlagBits::eBottomOfPipe,  vk::PipelineStageFlagBits::eTopOfPipe, {}, nullptr, nullptr, barriers);
+}
+
 void IQM::GPU::VulkanRuntime::nuke() const {
     auto mask =
         vk::AccessFlagBits::eIndirectCommandRead |

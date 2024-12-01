@@ -15,6 +15,7 @@
 #include "steps/fsim_angular_filter.h"
 #include "steps/fsim_filter_combinations.h"
 #include "steps/fsim_final_multiply.h"
+#include "steps/fsim_sum_filter_responses.h"
 
 namespace IQM::GPU {
     constexpr int FSIM_ORIENTATIONS = 4;
@@ -49,6 +50,7 @@ namespace IQM::GPU {
         FSIMLogGabor logGaborFilter;
         FSIMAngularFilter angularFilter;
         FSIMFilterCombinations combinations;
+        FSIMSumFilterResponses sumFilterResponses;
         FSIMFinalMultiply final_multiply;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
