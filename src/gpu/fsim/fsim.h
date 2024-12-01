@@ -43,6 +43,7 @@ namespace IQM::GPU {
         void initFftLibrary(const VulkanRuntime &runtime, int width, int height);
         void teardownFftLibrary();
         void computeFft(const VulkanRuntime &runtime, int width, int height);
+        void computeMassInverseFft(const VulkanRuntime & runtime, const vk::raii::Buffer &buffer);
 
         FSIMLowpassFilter lowpassFilter;
         FSIMLogGabor logGaborFilter;
@@ -79,12 +80,14 @@ namespace IQM::GPU {
         vk::raii::DescriptorSet descSetExtractLumaRef = VK_NULL_HANDLE;
         vk::raii::ShaderModule kernelExtractLuma = VK_NULL_HANDLE;
 
-        std::shared_ptr<VulkanImage> imageFftInput;
-        std::shared_ptr<VulkanImage> imageFftRef;
+        vk::raii::DeviceMemory memoryFft = VK_NULL_HANDLE;
+        vk::raii::Buffer bufferFft = VK_NULL_HANDLE;
 
         // FFT lib
         VkFFTApplication fftApplication{};
+        VkFFTApplication fftApplicationInverse{};
         vk::raii::Fence fftFence = VK_NULL_HANDLE;
+        vk::raii::Fence fftFenceInverse = VK_NULL_HANDLE;
     };
 }
 

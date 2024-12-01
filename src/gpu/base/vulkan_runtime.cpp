@@ -199,7 +199,7 @@ IQM::GPU::VulkanImage IQM::GPU::VulkanRuntime::createImage(const vk::ImageCreate
 
 void IQM::GPU::VulkanRuntime::setImageLayout(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const vk::raii::Image& image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const {
     vk::AccessFlags sourceAccessMask;
-    vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+    vk::PipelineStageFlags sourceStage = vk::PipelineStageFlagBits::eTopOfPipe | vk::PipelineStageFlagBits::eTransfer;
     vk::AccessFlags destinationAccessMask;
     vk::PipelineStageFlags destinationStage = vk::PipelineStageFlagBits::eHost;
 
@@ -217,6 +217,31 @@ void IQM::GPU::VulkanRuntime::setImageLayout(const std::shared_ptr<vk::raii::Com
         .subresourceRange = imageSubresourceRange
     };
     return cmd_buf->pipelineBarrier(sourceStage, destinationStage, {}, nullptr, nullptr, imageMemoryBarrier);
+}
+
+void IQM::GPU::VulkanRuntime::nuke() const {
+    auto mask =
+        vk::AccessFlagBits::eIndirectCommandRead |
+        vk::AccessFlagBits::eIndexRead |
+        vk::AccessFlagBits::eVertexAttributeRead |
+        vk::AccessFlagBits::eUniformRead |
+        vk::AccessFlagBits::eInputAttachmentRead |
+        vk::AccessFlagBits::eShaderRead |
+        vk::AccessFlagBits::eShaderWrite |
+        vk::AccessFlagBits::eColorAttachmentRead |
+        vk::AccessFlagBits::eColorAttachmentWrite |
+        vk::AccessFlagBits::eDepthStencilAttachmentRead |
+        vk::AccessFlagBits::eDepthStencilAttachmentWrite |
+        vk::AccessFlagBits::eTransferRead |
+        vk::AccessFlagBits::eTransferWrite|
+        vk::AccessFlagBits::eHostRead |
+        vk::AccessFlagBits::eHostWrite;
+
+    vk::MemoryBarrier barrier {
+        .srcAccessMask = mask,
+        .dstAccessMask = mask,
+    };
+    return this->_cmd_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, {}, {barrier}, nullptr, nullptr);
 }
 
 std::vector<vk::PushConstantRange> IQM::GPU::VulkanRuntime::createPushConstantRange(const unsigned size) {

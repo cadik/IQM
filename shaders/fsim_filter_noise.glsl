@@ -6,45 +6,44 @@
 #version 450
 #pragma shader_stage(compute)
 
-#define ORIENTATIONS 4
-#define SCALES 4
-#define OxS 16
+layout (local_size_x = 128, local_size_y = 1) in;
 
-layout (local_size_x = 32, local_size_y = 1) in;
-
-layout(std430, set = 0, binding = 0) buffer InFFTBuf {
-    float inData[];
-} fftbufs[OxS];
-layout(std430, set = 0, binding = 1) buffer OutBuf {
-    float sumFilter[ORIENTATIONS];
+layout(std430, set = 0, binding = 0) buffer InOutBuf {
+    float sumFilter[];
 };
 
 layout( push_constant ) uniform constants {
+    // number of elements to sum
+    uint size;
     // execution index
     uint index;
-    uint size;
+    // do pow? only on first pass
+    uint doPower;
 } push_consts;
 
-shared float[32] subSums;
-
+shared float subSums[128];
 void main() {
-    uint srcIndex = push_consts.index * ORIENTATIONS;
-    uint maxSize = push_consts.size + 32;
-    subSums[gl_LocalInvocationID.x] = 0;
+    uint tid = gl_LocalInvocationID.x;
+    uint i = gl_WorkGroupID.x * gl_WorkGroupSize.x + tid;
 
-    for (uint i = 0; i < maxSize; i+=32) {
-        uint x = i + gl_LocalInvocationID.x;
-
-        float val = mix(fftbufs[srcIndex].inData[x], 0, x >= push_consts.size);
-
-        subSums[gl_LocalInvocationID.x] += pow(val, 2.0);
+    subSums[tid] = mix(sumFilter[i + push_consts.index], 0.0, i >= push_consts.size);
+    if (push_consts.doPower != 0) {
+        subSums[tid] = pow(subSums[tid], 2.0);
     }
 
-    if (gl_LocalInvocationID.x == 0) {
-        float totalSum = 0;
-        for (uint i = 0; i < 32; i++) {
-            totalSum += subSums[i];
+    memoryBarrierShared();
+    barrier();
+
+    for (uint s = gl_WorkGroupSize.x / 2; s > 0; s >>= 1) {
+        if (tid < s) {
+            subSums[tid] += subSums[tid + s];
         }
-        sumFilter[push_consts.index] = totalSum;
+
+        memoryBarrierShared();
+        barrier();
+    }
+
+    if (tid == 0) {
+        sumFilter[gl_WorkGroupID.x + push_consts.index] = subSums[0];
     }
 }

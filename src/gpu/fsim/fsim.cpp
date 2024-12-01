@@ -86,31 +86,19 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
         this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
         this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
 
-        runtime._cmd_buffer->end();
-
-        const std::vector cmdBufs = {
-            &**runtime._cmd_buffer
-        };
-
-        const vk::SubmitInfo submitInfo{
-            .commandBufferCount = 1,
-            .pCommandBuffers = *cmdBufs.data()
-        };
-
-        const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-        runtime._queue->submit(submitInfo, *fence);
-        runtime.waitForFence(fence);
-        result.timestamps.mark("images downscaled + lowpass filter computed");
     }
+
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup,
+        nullptr,
+        nullptr,
+        nullptr
+    );
 
     // parallel execution of these steps is possible, so use it
     {
-        const vk::CommandBufferBeginInfo beginInfo = {
-            .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-        };
-        runtime._cmd_buffer->begin(beginInfo);
-
         this->createGradientMap(runtime, widthDownscale, heightDownscale);
         this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
         this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
@@ -131,14 +119,17 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
         runtime._queue->submit(submitInfo, *fence);
         runtime.waitForFence(fence);
 
-        result.timestamps.mark("gradients, log gabor and angular filters computed");
+        result.timestamps.mark("images downscaled + lowpass filter, gradients, log gabor and angular filters computed");
     }
 
     this->computeFft(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("fft computed");
 
-    this->combinations.combineFilters(runtime, this->angularFilter, this->logGaborFilter, widthDownscale, heightDownscale);
+    this->combinations.combineFilters(runtime, this->angularFilter, this->logGaborFilter, this->bufferFft, widthDownscale, heightDownscale);
     result.timestamps.mark("filters combined");
+
+    this->computeMassInverseFft(runtime, this->combinations.fftBuffer);
+    result.timestamps.mark("mass ifft computed");
 
     auto metrics = this->final_multiply.computeMetrics(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FSIM, FSIMc computed");
@@ -271,8 +262,6 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
     this->imageRefDownscaled = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
     this->imageGradientMapInput = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
     this->imageGradientMapRef = std::make_shared<VulkanImage>(runtime.createImage(imageFloatInfo));
-    this->imageFftInput = std::make_shared<VulkanImage>(runtime.createImage(imageFftInfo));
-    this->imageFftRef = std::make_shared<VulkanImage>(runtime.createImage(imageFftInfo));
 
     auto imageInfosInput = VulkanRuntime::createImageInfos({
         this->imageInput,
@@ -387,7 +376,8 @@ void IQM::GPU::FSIM::createGradientMap(const VulkanRuntime &runtime, int width, 
 }
 
 void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int width, const int height) {
-    uint64_t bufferSize = width * height * sizeof(float) * 2;
+    // image size * 2 float components (complex numbers) * 2 batches
+    uint64_t bufferSize = width * height * sizeof(float) * 2 * 2;
 
     VkFFTApplication fftApp = {};
 
@@ -405,6 +395,8 @@ void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int widt
     fftConfig.device = &deviceRef;
     fftConfig.queue = &queueRef;
     fftConfig.commandPool = &cmdPoolRef;
+    fftConfig.numberBatches = 2;
+    fftConfig.makeForwardPlanOnly = true;
 
     this->fftFence =  vk::raii::Fence{runtime._device, vk::FenceCreateInfo{}};
     VkFence fenceRef = *this->fftFence;
@@ -415,14 +407,44 @@ void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int widt
     }
 
     this->fftApplication = fftApp;
+
+    // (image size * 2 float components (complex numbers) ) * 16 filters * 3 cases (by itself, times input, times reference)
+    uint64_t bufferSizeInverse = width * height * sizeof(float) * 2 * FSIM_ORIENTATIONS * FSIM_SCALES * 3;
+
+    VkFFTApplication fftAppInverse = {};
+
+    VkFFTConfiguration fftConfigInverse = {};
+    fftConfigInverse.FFTdim = 2;
+    fftConfigInverse.size[0] = width;
+    fftConfigInverse.size[1] = height;
+    fftConfigInverse.bufferSize = &bufferSizeInverse;
+
+    fftConfigInverse.physicalDevice = &physDeviceRef;
+    fftConfigInverse.device = &deviceRef;
+    fftConfigInverse.queue = &queueRef;
+    fftConfigInverse.commandPool = &cmdPoolRef;
+    fftConfigInverse.numberBatches = 16 * 3;
+    fftConfigInverse.makeInversePlanOnly = true;
+
+    this->fftFenceInverse =  vk::raii::Fence{runtime._device, vk::FenceCreateInfo{}};
+    VkFence fenceRefInverse = *this->fftFenceInverse;
+    fftConfigInverse.fence = &fenceRefInverse;
+
+    if (initializeVkFFT(&fftAppInverse, fftConfigInverse) != VKFFT_SUCCESS) {
+        throw std::runtime_error("failed to initialize FFT");
+    }
+
+    this->fftApplicationInverse = fftAppInverse;
 }
 
 void IQM::GPU::FSIM::teardownFftLibrary() {
+    deleteVkFFT(&this->fftApplicationInverse);
     deleteVkFFT(&this->fftApplication);
 }
 
 void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, const int height) {
-    uint64_t bufferSize = width * height * sizeof(float) * 2;
+    // image size * 2 float components (complex numbers) * 2 batches
+    uint64_t bufferSize = width * height * sizeof(float) * 2 * 2;
 
     auto [fftBuf, fftMem] = runtime.createBuffer(
         bufferSize,
@@ -431,11 +453,14 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     );
     fftBuf.bindMemory(fftMem, 0);
 
-    std::vector bufRef = {
+    this->memoryFft = std::move(fftMem);
+    this->bufferFft = std::move(fftBuf);
+
+    std::vector bufIn = {
         vk::DescriptorBufferInfo{
-            .buffer = fftBuf,
+            .buffer = this->bufferFft,
             .offset = 0,
-            .range = bufferSize,
+            .range = bufferSize / 2,
         }
     };
     auto imInfoInImage = VulkanRuntime::createImageInfos({
@@ -459,8 +484,16 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eStorageBuffer,
         .pImageInfo = nullptr,
-        .pBufferInfo = bufRef.data(),
+        .pBufferInfo = bufIn.data(),
         .pTexelBufferView = nullptr,
+    };
+
+    std::vector bufRef = {
+        vk::DescriptorBufferInfo{
+            .buffer = this->bufferFft,
+            .offset = bufferSize / 2,
+            .range = bufferSize / 2,
+        }
     };
 
     auto imInfoRefImage = VulkanRuntime::createImageInfos({
@@ -499,59 +532,68 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     };
     runtime._cmd_buffer->begin(beginInfo);
 
-    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineExtractLuma);
-    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutExtractLuma, 0, {this->descSetExtractLumaIn}, {});
-
     //shader works in 8x8 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineExtractLuma);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutExtractLuma, 0, {this->descSetExtractLumaIn}, {});
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
-    std::vector barriers = {
-        vk::BufferMemoryBarrier{
-            .srcAccessMask = vk::AccessFlags{},
-            .dstAccessMask = vk::AccessFlags{},
-            .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-            .buffer = fftBuf,
-            .offset = 0,
-            .size = bufferSize,
-        }
-    };
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutExtractLuma, 0, {this->descSetExtractLumaRef}, {});
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
     runtime._cmd_buffer->pipelineBarrier(
-        vk::PipelineStageFlagBits::eTopOfPipe,
+        vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         {},
         nullptr,
-        barriers,
+        nullptr,
         nullptr
     );
 
-    runtime.setImageLayout(runtime._cmd_buffer, this->imageFftInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(runtime._cmd_buffer, this->imageFftRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    VkFFTLaunchParams launchParams = {};
+    VkCommandBuffer cmdBuf = **runtime._cmd_buffer;
+    launchParams.commandBuffer = &cmdBuf;
+    VkBuffer fftBufRef = *this->bufferFft;
+    launchParams.buffer = &fftBufRef;
+
+    if (auto res = VkFFTAppend(&this->fftApplication, -1, &launchParams); res != VKFFT_SUCCESS) {
+        std::string err = "failed to append FFT: " + std::to_string(res);
+        throw std::runtime_error(err);
+    }
+
+    runtime._cmd_buffer->end();
+
+    const std::vector cmdBufs = {
+        &**runtime._cmd_buffer
+    };
+
+    const vk::SubmitInfo submitInfo{
+        .commandBufferCount = 1,
+        .pCommandBuffers = *cmdBufs.data()
+    };
+
+    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
+    runtime._queue->submit(submitInfo, *fence);
+    runtime.waitForFence(fence);
+}
+
+void IQM::GPU::FSIM::computeMassInverseFft(const VulkanRuntime &runtime, const vk::raii::Buffer &buffer) {
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_buffer->begin(beginInfo);
 
     VkFFTLaunchParams launchParams = {};
     VkCommandBuffer cmdBuf = **runtime._cmd_buffer;
-    VkBuffer fftBufRef = *fftBuf;
     launchParams.commandBuffer = &cmdBuf;
+    VkBuffer fftBufRef = *buffer;
     launchParams.buffer = &fftBufRef;
 
-    if (VkFFTAppend(&this->fftApplication, -1, &launchParams) != VKFFT_SUCCESS) {
-        throw std::runtime_error("failed to append FFT");
+    if (auto res = VkFFTAppend(&this->fftApplicationInverse, 1, &launchParams); res != VKFFT_SUCCESS) {
+        std::string err = "failed to append inverse FFT: " + std::to_string(res);
+        throw std::runtime_error(err);
     }
-
-    std::vector regions = {
-        vk::BufferImageCopy{
-            .bufferOffset = 0,
-            .bufferRowLength = static_cast<uint32_t>(width),
-            .bufferImageHeight = static_cast<uint32_t>(height),
-            .imageSubresource = vk::ImageSubresourceLayers{.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
-            .imageOffset = vk::Offset3D{0, 0, 0},
-            .imageExtent = vk::Extent3D{static_cast<uint32_t>(width), static_cast<uint32_t>(height), 1}
-        }
-    };
-
-    runtime._cmd_buffer->copyBufferToImage(fftBuf, this->imageFftInput->image, vk::ImageLayout::eGeneral, regions);
 
     runtime._cmd_buffer->end();
 

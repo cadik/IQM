@@ -28,7 +28,13 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
         vk::DescriptorSetLayoutBinding{
             .binding = 2,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = FSIM_SCALES * FSIM_ORIENTATIONS,
+            .descriptorCount = 1,
+            .stageFlags = vk::ShaderStageFlagBits::eCompute,
+        },
+        vk::DescriptorSetLayoutBinding{
+            .binding = 3,
+            .descriptorType = vk::DescriptorType::eStorageBuffer,
+            .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
         }
     }));
@@ -37,15 +43,9 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
         vk::DescriptorSetLayoutBinding{
             .binding = 0,
             .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = FSIM_SCALES * FSIM_ORIENTATIONS,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
             .descriptorCount = 1,
             .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        }
     }));
 
     const std::vector layouts = {
@@ -66,20 +66,18 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
     // 1x int - index of current execution
     const auto multPackRanges = VulkanRuntime::createPushConstantRange(1 * sizeof(int));
 
-    // 2x int - index of current execution, buffer size
-    const auto sumRanges = VulkanRuntime::createPushConstantRange(2 * sizeof(int));
+    // 3x int - buffer size, index of current execution, bool
+    const auto sumRanges = VulkanRuntime::createPushConstantRange(3 * sizeof(int));
 
     this->multPacklayout = runtime.createPipelineLayout({this->multPackDescSetLayout}, multPackRanges);
     this->multPackPipeline = runtime.createComputePipeline(this->multPackKernel, this->multPacklayout);
 
     this->sumLayout = runtime.createPipelineLayout({this->sumDescSetLayout}, sumRanges);
     this->sumPipeline = runtime.createComputePipeline(this->sumKernel, this->sumLayout);
-
-    this->buffers = std::vector<vk::raii::Buffer>();
 }
 
-void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, int width, int height) {
-    this->prepareBufferStorage(runtime, angulars, logGabor, width, height);
+void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, const vk::raii::Buffer& fftImages, int width, int height) {
+    this->prepareBufferStorage(runtime, angulars, logGabor, fftImages, width, height);
 
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
@@ -98,17 +96,70 @@ void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runti
         runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
     }
 
-    runtime._cmd_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eComputeShader, vk::DependencyFlagBits::eDeviceGroup, {}, {}, {});
+    vk::MemoryBarrier barrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eTransferRead,
+    };
+    runtime._cmd_buffer->pipelineBarrier(vk::PipelineStageFlagBits::eComputeShader, vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlagBits::eDeviceGroup, {barrier}, {}, {});
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->sumPipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->sumLayout, 0, {this->sumDescSet}, {});
 
-    uint64_t bufferSize = width * height * sizeof(float) * 2;
-    for (unsigned n = 0; n < FSIM_ORIENTATIONS; n++) {
-        runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, 0, n);
-        runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, sizeof(unsigned), bufferSize);
+    uint64_t bufferSize = width * height * 2;
+    runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, 0, bufferSize);
 
-        runtime._cmd_buffer->dispatch(1, 1, 1);
+    // parallel sum
+    for (unsigned n = 0; n < FSIM_ORIENTATIONS; n++) {
+        runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, sizeof(unsigned), n);
+
+        vk::BufferCopy region {
+            .srcOffset = FSIM_ORIENTATIONS * n * bufferSize * sizeof(float),
+            .dstOffset = n * sizeof(float),
+            .size = bufferSize * sizeof(float),
+        };
+        runtime._cmd_buffer->copyBuffer(this->fftBuffer, this->noiseLevels, {region});
+
+        barrier = {
+            .srcAccessMask = vk::AccessFlagBits::eTransferWrite | vk::AccessFlagBits::eTransferRead,
+            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        };
+        runtime._cmd_buffer->pipelineBarrier(
+            vk::PipelineStageFlagBits::eTransfer,
+            vk::PipelineStageFlagBits::eComputeShader,
+            vk::DependencyFlagBits::eDeviceGroup,
+            {barrier},
+            {},
+            {}
+        );
+        uint64_t groups = (bufferSize / 128) + 1;
+        uint32_t size = bufferSize;
+        bool doPower = true;
+
+        for (;;) {
+            runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, 0, size);
+            runtime._cmd_buffer->pushConstants<unsigned>(this->sumLayout, vk::ShaderStageFlagBits::eCompute, 2 * sizeof(unsigned), doPower);
+
+            runtime._cmd_buffer->dispatch(groups, 1, 1);
+
+            barrier = {
+                .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+                .dstAccessMask = vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eTransferRead | vk::AccessFlagBits::eTransferWrite,
+            };
+            runtime._cmd_buffer->pipelineBarrier(
+                vk::PipelineStageFlagBits::eComputeShader,
+                vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eTransfer,
+                vk::DependencyFlagBits::eDeviceGroup,
+                {barrier},
+                {},
+                {}
+            );
+            if (groups == 1) {
+                break;
+            }
+            size = groups;
+            groups = (groups / 128) + 1;
+            doPower = false;
+        }
     }
 
     runtime._cmd_buffer->end();
@@ -128,49 +179,30 @@ void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runti
     runtime.waitForFence(fence);
 }
 
-void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, int width, int height) {
-    uint64_t noiseLevelsBufferSize = FSIM_ORIENTATIONS * sizeof(float);
+void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, const vk::raii::Buffer& fftImages, int width, int height) {
+    uint64_t inFftBufSize = width * height * sizeof(float) * 2 * 2;
+    uint64_t outFftBufSize = width * height * sizeof(float) * 2 * FSIM_SCALES * FSIM_ORIENTATIONS * 3;
+
+    // oversize, so parallel sum can be done directly there
+    uint64_t noiseLevelsBufferSize = (FSIM_ORIENTATIONS + (width * height * 2 * 2)) * sizeof(float);
     auto [noiseLevelsBuf, noiseLevelsMemory] = runtime.createBuffer(
             noiseLevelsBufferSize,
-            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
+            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eDeviceLocal
         );
     noiseLevelsBuf.bindMemory(noiseLevelsMemory, 0);
     this->noiseLevels = std::move(noiseLevelsBuf);
     this->noiseLevelsMemory = std::move(noiseLevelsMemory);
 
-    uint64_t bufferSize = width * height * sizeof(float) * 2;
+    auto [fftBuf, fftMem] = runtime.createBuffer(
+        outFftBufSize,
+        vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eDeviceLocal
+    );
+    fftBuf.bindMemory(fftMem, 0);
 
-    std::vector<vk::DescriptorBufferInfo> bufferInfos;
-
-    for (unsigned n = 0; n < FSIM_ORIENTATIONS * FSIM_SCALES; n++) {
-        auto [fftBuf, fftMem] = runtime.createBuffer(
-            bufferSize,
-            vk::BufferUsageFlagBits::eStorageBuffer | vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eDeviceLocal
-        );
-        fftBuf.bindMemory(fftMem, 0);
-
-        bufferInfos.push_back(vk::DescriptorBufferInfo{
-            .buffer = fftBuf,
-            .offset = 0,
-            .range = bufferSize,
-        });
-
-        this->buffers.emplace_back(std::move(fftBuf));
-        this->memories.emplace_back(std::move(fftMem));
-    }
-
-    const vk::WriteDescriptorSet writeSetBuf{
-        .dstSet = this->multPackDescSet,
-        .dstBinding = 2,
-        .dstArrayElement = 0,
-        .descriptorCount = FSIM_ORIENTATIONS * FSIM_SCALES,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = bufferInfos.data(),
-        .pTexelBufferView = nullptr,
-    };
+    this->fftBuffer = std::move(fftBuf);
+    this->fftMemory = std::move(fftMem);
 
     auto angularInfos = VulkanRuntime::createImageInfos(angulars.imageAngularFilters);
     auto logInfos = VulkanRuntime::createImageInfos(logGabor.imageLogGaborFilters);
@@ -197,15 +229,49 @@ void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime 
         .pTexelBufferView = nullptr,
     };
 
+    vk::DescriptorBufferInfo fftBufInfo{
+        .buffer = fftImages,
+        .offset = 0,
+        .range = inFftBufSize,
+    };
+
+    const vk::WriteDescriptorSet writeSetFftIn{
+        .dstSet = this->multPackDescSet,
+        .dstBinding = 2,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .pImageInfo = nullptr,
+        .pBufferInfo = &fftBufInfo,
+        .pTexelBufferView = nullptr,
+    };
+
+    vk::DescriptorBufferInfo bufferInfo{
+        .buffer = this->fftBuffer,
+        .offset = 0,
+        .range = outFftBufSize,
+    };
+
+    const vk::WriteDescriptorSet writeSetBuf{
+        .dstSet = this->multPackDescSet,
+        .dstBinding = 3,
+        .dstArrayElement = 0,
+        .descriptorCount = 1,
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .pImageInfo = nullptr,
+        .pBufferInfo = &bufferInfo,
+        .pTexelBufferView = nullptr,
+    };
+
     vk::DescriptorBufferInfo bufferInfoSum{
         .buffer = this->noiseLevels,
         .offset = 0,
         .range = noiseLevelsBufferSize,
     };
 
-    const vk::WriteDescriptorSet writeSetNoiseDest{
+    const vk::WriteDescriptorSet writeSetNoise{
         .dstSet = this->sumDescSet,
-        .dstBinding = 1,
+        .dstBinding = 0,
         .dstArrayElement = 0,
         .descriptorCount = 1,
         .descriptorType = vk::DescriptorType::eStorageBuffer,
@@ -214,19 +280,8 @@ void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime 
         .pTexelBufferView = nullptr,
     };
 
-    const vk::WriteDescriptorSet writeSetNoiseSrc{
-        .dstSet = this->sumDescSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = FSIM_ORIENTATIONS * FSIM_SCALES,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = bufferInfos.data(),
-        .pTexelBufferView = nullptr,
-    };
-
     const std::vector writes = {
-        writeSetBuf, writeSetAngular, writeSetLogGabor, writeSetNoiseSrc, writeSetNoiseDest
+        writeSetBuf, writeSetAngular, writeSetLogGabor, writeSetNoise, writeSetFftIn
     };
 
     runtime._device.updateDescriptorSets(writes, nullptr);
