@@ -15,6 +15,7 @@
 #include "steps/fsim_angular_filter.h"
 #include "steps/fsim_filter_combinations.h"
 #include "steps/fsim_final_multiply.h"
+#include "steps/fsim_noise_power.h"
 #include "steps/fsim_sum_filter_responses.h"
 
 namespace IQM::GPU {
@@ -33,8 +34,6 @@ namespace IQM::GPU {
         explicit FSIM(const VulkanRuntime &runtime);
         FSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
 
-        bool doColorComparison = true;
-
     private:
         static int computeDownscaleFactor(int cols, int rows);
         void sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
@@ -51,6 +50,7 @@ namespace IQM::GPU {
         FSIMAngularFilter angularFilter;
         FSIMFilterCombinations combinations;
         FSIMSumFilterResponses sumFilterResponses;
+        FSIMNoisePower noise_power;
         FSIMFinalMultiply final_multiply;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;

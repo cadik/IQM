@@ -6,7 +6,15 @@
 #include "fsim.h"
 #include "../img_params.h"
 
-IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logGaborFilter(runtime), angularFilter(runtime), combinations(runtime), sumFilterResponses(runtime), final_multiply(runtime) {
+IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime):
+lowpassFilter(runtime),
+logGaborFilter(runtime),
+angularFilter(runtime),
+combinations(runtime),
+sumFilterResponses(runtime),
+noise_power(runtime),
+final_multiply(runtime)
+{
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
     this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
     this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
@@ -42,8 +50,8 @@ IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime): lowpassFilter(runtime), logG
     this->descSetExtractLumaIn = std::move(sets[4]);
     this->descSetExtractLumaRef = std::move(sets[5]);
 
-    // 2x int - kernel size, retyped bool
-    const auto downsampleRanges = VulkanRuntime::createPushConstantRange(sizeof(int) * 2);
+    // 1x int - kernel size
+    const auto downsampleRanges = VulkanRuntime::createPushConstantRange(sizeof(int));
 
     this->layoutDownscale = runtime.createPipelineLayout(layout_2, downsampleRanges);
     this->pipelineDownscale = runtime.createComputePipeline(this->downscaleKernel, this->layoutDownscale);
@@ -133,6 +141,9 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     this->sumFilterResponses.computeSums(runtime, this->combinations.fftBuffer, widthDownscale, heightDownscale);
     result.timestamps.mark("filter responses computed");
+
+    this->noise_power.computeNoisePower(runtime, this->combinations.noiseLevels, this->combinations.fftBuffer, widthDownscale, heightDownscale);
+    result.timestamps.mark("noise powers computed");
 
     auto metrics = this->final_multiply.computeMetrics(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FSIM, FSIMc computed");
@@ -344,13 +355,7 @@ void IQM::GPU::FSIM::computeDownscaledImages(const VulkanRuntime &runtime, const
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipelineDownscale);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layoutDownscale, 0, {this->descSetDownscaleIn}, {});
 
-    int useColor = this->doColorComparison;
-
-    std::array values = {
-        F,
-        useColor,
-    };
-    runtime._cmd_buffer->pushConstants<int>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, values);
+    runtime._cmd_buffer->pushConstants<int>(this->layoutDownscale, vk::ShaderStageFlagBits::eCompute, 0, F);
 
     //shader works in 8x8 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
@@ -428,6 +433,8 @@ void IQM::GPU::FSIM::initFftLibrary(const VulkanRuntime &runtime, const int widt
     fftConfigInverse.commandPool = &cmdPoolRef;
     fftConfigInverse.numberBatches = 16 * 3;
     fftConfigInverse.makeInversePlanOnly = true;
+    fftConfigInverse.normalize = true;
+    fftConfigInverse.isCompilerInitialized = true;
 
     this->fftFenceInverse =  vk::raii::Fence{runtime._device, vk::FenceCreateInfo{}};
     VkFence fenceRefInverse = *this->fftFenceInverse;

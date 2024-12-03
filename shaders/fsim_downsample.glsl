@@ -16,21 +16,15 @@ layout(set = 0, binding = 1, rgba32f) uniform writeonly image2D output_img;
 layout( push_constant ) uniform constants {
     // FSIM scaling factor
     int F;
-    // bool passed as int
-    int colorConvert;
 } push_consts;
 
 vec4 colorConvert(vec4 inColor) {
-    if (push_consts.colorConvert != 0) {
-        return vec4(
-            inColor.r * 0.596 - inColor.g * 0.274 - inColor.b * 0.322,
-            inColor.r * 0.211 - inColor.g * 0.523 + inColor.b * 0.312,
-            inColor.r * 0.299 + inColor.g * 0.587 + inColor.b * 0.114,
-            1.0
-        );
-    } else {
-        return vec4(1.0, 1.0, inColor.r, 1.0);
-    }
+    return vec4(
+        inColor.r * 0.596 - inColor.g * 0.274 - inColor.b * 0.322,
+        inColor.r * 0.211 - inColor.g * 0.523 + inColor.b * 0.312,
+        inColor.r * 0.299 + inColor.g * 0.587 + inColor.b * 0.114,
+        1.0
+    );
 }
 
 void main() {
@@ -52,7 +46,7 @@ void main() {
     for (int j = xStart; j < (xStart + push_consts.F); j++) {
         for (int k = yStart; k < (yStart + push_consts.F); k++) {
             if (j >= 0 && j < size.x && k >= 0 && k < size.y) {
-                sum += colorConvert(imageLoad(input_img, ivec2(j, k)));
+                sum += colorConvert(imageLoad(input_img, ivec2(j, k)) * 255.0);
             }
         }
     }
