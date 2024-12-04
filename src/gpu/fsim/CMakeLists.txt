@@ -16,6 +16,10 @@ add_library(IQM-FSIM STATIC fsim.cpp
         steps/fsim_sum_filter_responses.h
         steps/fsim_noise_power.cpp
         steps/fsim_noise_power.h
+        steps/fsim_phase_congruency.cpp
+        steps/fsim_phase_congruency.h
+        steps/fsim_estimate_energy.cpp
+        steps/fsim_estimate_energy.h
 )
 
 target_include_directories(IQM-FSIM

@@ -13,6 +13,8 @@ angularFilter(runtime),
 combinations(runtime),
 sumFilterResponses(runtime),
 noise_power(runtime),
+estimateEnergy(runtime),
+phaseCongruency(runtime),
 final_multiply(runtime)
 {
     this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
@@ -145,7 +147,20 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->noise_power.computeNoisePower(runtime, this->combinations.noiseLevels, this->combinations.fftBuffer, widthDownscale, heightDownscale);
     result.timestamps.mark("noise powers computed");
 
-    auto metrics = this->final_multiply.computeMetrics(runtime, widthDownscale, heightDownscale);
+    this->estimateEnergy.estimateEnergy(runtime, this->combinations.fftBuffer, widthDownscale, heightDownscale);
+    result.timestamps.mark("noise energy computed");
+
+    this->phaseCongruency.compute(runtime, this->noise_power.noisePowers, this->estimateEnergy.energyBuffers, this->sumFilterResponses.filterResponsesInput, this->sumFilterResponses.filterResponsesRef, widthDownscale, heightDownscale);
+    result.timestamps.mark("phase congruency computed");
+
+    auto metrics = this->final_multiply.computeMetrics(
+        runtime,
+        {this->imageInputDownscaled, this->imageRefDownscaled},
+        {this->imageGradientMapInput, this->imageGradientMapRef},
+        {this->phaseCongruency.pcInput, this->phaseCongruency.pcRef},
+        widthDownscale,
+        heightDownscale
+    );
     result.timestamps.mark("FSIM, FSIMc computed");
 
     result.image = image;

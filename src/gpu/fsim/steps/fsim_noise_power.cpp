@@ -48,7 +48,7 @@ void IQM::GPU::FSIMNoisePower::copyBackToGpu(const VulkanRuntime &runtime, const
     runtime.waitForFence(fence);
 }
 
-void IQM::GPU::FSIMNoisePower::computeNoisePower(const VulkanRuntime &runtime, const vk::raii::Buffer& filterSums,  const vk::raii::Buffer& fftBuffer, int width, int height) {
+void IQM::GPU::FSIMNoisePower::computeNoisePower(const VulkanRuntime &runtime, const vk::raii::Buffer& filterSums, const vk::raii::Buffer& fftBuffer, int width, int height) {
     auto [stgBuf, stgMem] = runtime.createBuffer(
         2 * FSIM_ORIENTATIONS * sizeof(float),
         vk::BufferUsageFlagBits::eTransferSrc | vk::BufferUsageFlagBits::eTransferDst,

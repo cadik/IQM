@@ -13,9 +13,11 @@
 #include "steps/fsim_log_gabor.h"
 #include "steps/fsim_lowpass_filter.h"
 #include "steps/fsim_angular_filter.h"
+#include "steps/fsim_estimate_energy.h"
 #include "steps/fsim_filter_combinations.h"
 #include "steps/fsim_final_multiply.h"
 #include "steps/fsim_noise_power.h"
+#include "steps/fsim_phase_congruency.h"
 #include "steps/fsim_sum_filter_responses.h"
 
 namespace IQM::GPU {
@@ -51,6 +53,8 @@ namespace IQM::GPU {
         FSIMFilterCombinations combinations;
         FSIMSumFilterResponses sumFilterResponses;
         FSIMNoisePower noise_power;
+        FSIMEstimateEnergy estimateEnergy;
+        FSIMPhaseCongruency phaseCongruency;
         FSIMFinalMultiply final_multiply;
 
         vk::raii::ShaderModule downscaleKernel = VK_NULL_HANDLE;
