@@ -14,7 +14,7 @@ layout(set = 0, binding = 0, rgba32f) uniform readonly image2D input_img;
 layout(set = 0, binding = 1, r32f) uniform writeonly image2D output_img;
 
 const float verticalArray[9] = float[9](3.0, 0.0, -3.0, 10.0, 0.0, -10.0, 3.0, 0.0, -3.0);
-const float horizontalArray[9] = float[9](3.0, 10.0, -3.0, 0.0, 0.0, 0.0, -3.0, -10.0, -3.0);
+const float horizontalArray[9] = float[9](3.0, 10.0, 3.0, 0.0, 0.0, 0.0, -3.0, -10.0, -3.0);
 
 float verticalWeight(ivec2 pos) {
     int index = (pos.x + 1) + ((pos.y + 1) * 3);

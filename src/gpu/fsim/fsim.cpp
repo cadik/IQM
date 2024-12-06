@@ -95,14 +95,18 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
         this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
         this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
         this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
-
     }
+
+    vk::MemoryBarrier barrier{
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+    };
 
     runtime._cmd_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
         vk::DependencyFlagBits::eDeviceGroup,
-        nullptr,
+        {barrier},
         nullptr,
         nullptr
     );
