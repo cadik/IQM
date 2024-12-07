@@ -13,13 +13,13 @@
 
 class Timestamps {
 public:
-    std::vector<std::pair<std::string, std::chrono::time_point<std::chrono::system_clock>>> inner;
+    std::vector<std::pair<std::string, std::chrono::time_point<std::chrono::high_resolution_clock>>> inner;
     void mark(const std::string& name) {
         inner.emplace_back(name, std::chrono::high_resolution_clock::now());
     }
     void print(
-        const std::chrono::time_point<std::chrono::system_clock> start,
-        const std::chrono::time_point<std::chrono::system_clock> end
+        const std::chrono::time_point<std::chrono::high_resolution_clock> start,
+        const std::chrono::time_point<std::chrono::high_resolution_clock> end
     ) {
         auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
 

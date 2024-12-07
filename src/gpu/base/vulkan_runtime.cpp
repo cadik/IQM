@@ -495,10 +495,12 @@ void IQM::GPU::VulkanRuntime::initQueues() {
 
     vk::CommandBufferAllocateInfo commandBufferAllocateInfo{
         .commandPool = *this->_commandPool,
-        .commandBufferCount = 1,
+        .commandBufferCount = 2,
     };
 
-    this->_cmd_buffer = std::make_shared<vk::raii::CommandBuffer>(std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front()));
+    auto bufs = vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo};
+    this->_cmd_buffer = std::make_shared<vk::raii::CommandBuffer>(std::move(bufs[0]));
+    this->_cmd_bufferTransfer = std::make_shared<vk::raii::CommandBuffer>(std::move(bufs[1]));
 
     if (dedicatedTransferQueue) {
         vk::CommandPoolCreateInfo commandPoolCreateInfoTransfer {
@@ -514,9 +516,6 @@ void IQM::GPU::VulkanRuntime::initQueues() {
         };
 
         this->_cmd_bufferTransfer = std::make_shared<vk::raii::CommandBuffer>(std::move(vk::raii::CommandBuffers{this->_device, commandBufferAllocateInfo}.front()));
-    } else {
-        this->_commandPoolTransfer = this->_commandPool;
-        this->_cmd_bufferTransfer = this->_cmd_buffer;
     }
 }
 

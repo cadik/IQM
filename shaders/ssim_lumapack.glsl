@@ -5,7 +5,6 @@
 
 #version 450
 #pragma shader_stage(compute)
-#extension GL_EXT_debug_printf : enable
 
 #define E 2.71828182846
 #define PI 3.141592653589

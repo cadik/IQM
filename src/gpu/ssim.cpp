@@ -50,9 +50,15 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
     this->pipelineLumapack = runtime.createComputePipeline(this->kernelLumapack, this->layoutLumapack);
     this->pipelineGaussInput = runtime.createComputePipeline(this->kernelGaussInput, this->layoutGaussInput);
+
+    this->uploadDone = runtime._device.createSemaphore(vk::SemaphoreCreateInfo{});
+    this->computeDone = runtime._device.createSemaphore(vk::SemaphoreCreateInfo{});
+    this->transferFence = runtime._device.createFence(vk::FenceCreateInfo{});
 }
 
-IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime) {
+IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+    this->prepareImages(runtime, image, ref);
+
     SSIMResult res;
 
     res.timestamps.mark("start GPU pipeline");
@@ -148,17 +154,17 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
 
     auto mask = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eComputeShader};
     const vk::SubmitInfo submitInfo{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*this->uploadDone,
         .pWaitDstStageMask = &mask,
         .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
+        .pCommandBuffers = *cmdBufs.data(),
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &*this->computeDone
     };
 
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime._device.waitIdle();
-
-    res.timestamps.mark("end GPU pipeline");
+    runtime._queue->submit(submitInfo, {});
+    runtime.waitForFence(this->transferFence);
 
     const auto size = this->imageParameters.height * this->imageParameters.width * sizeof(float);
     auto [stgBuf, stgMem] = runtime.createBuffer(
@@ -192,6 +198,8 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
 
     auto maskCopy = vk::PipelineStageFlags{vk::PipelineStageFlagBits::eTransfer};
     const vk::SubmitInfo submitInfoCopy{
+        .waitSemaphoreCount = 1,
+        .pWaitSemaphores = &*this->computeDone,
         .pWaitDstStageMask = &maskCopy,
         .commandBufferCount = 1,
         .pCommandBuffers = *cmdBufsCopy.data()
@@ -202,18 +210,18 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime)
     runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
     runtime._device.waitIdle();
 
-    res.timestamps.mark("end GPU writeback");
+    res.timestamps.mark("end GPU pipeline");
 
-    cv::Mat image;
-    image.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
+    cv::Mat output;
+    output.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
     void * outBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * sizeof(float), {});
-    memcpy(image.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
+    memcpy(output.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
     res.timestamps.mark("end copy from GPU");
 
     res.mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
     res.timestamps.mark("end MSSIM compute");
     stgMem.unmapMemory();
-    res.image = image;
+    res.image = output;
 
     return res;
 }
@@ -246,6 +254,11 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     inBufData = stgRefMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * 4, {});
     memcpy(inBufData, ref.data, this->imageParameters.height * this->imageParameters.width * 4);
     stgRefMem.unmapMemory();
+
+    this->stgInput = std::move(stgBuf);
+    this->stgInputMemory = std::move(stgMem);
+    this->stgRef = std::move(stgRefBuf);
+    this->stgRefMemory = std::move(stgRefMem);
 
     vk::ImageCreateInfo srcImageInfo = {
         .flags = {},
@@ -283,11 +296,13 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
     };
     runtime._cmd_bufferTransfer->begin(beginInfo);
 
-    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageInput->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageRef->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageOut->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageLuma->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-    runtime.setImageLayout(runtime._cmd_bufferTransfer, this->imageLumaBlurred->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
+    VulkanRuntime::initImages(runtime._cmd_bufferTransfer, {
+        this->imageInput,
+        this->imageRef,
+        this->imageOut,
+        this->imageLuma,
+        this->imageLumaBlurred,
+    });
 
     vk::BufferImageCopy copyRegion{
         .bufferOffset = 0,
@@ -297,8 +312,8 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .imageOffset = vk::Offset3D{0, 0, 0},
         .imageExtent = vk::Extent3D{this->imageParameters.width, this->imageParameters.height, 1}
     };
-    runtime._cmd_bufferTransfer->copyBufferToImage(stgBuf, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
-    runtime._cmd_bufferTransfer->copyBufferToImage(stgRefBuf, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_bufferTransfer->copyBufferToImage(this->stgInput, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
+    runtime._cmd_bufferTransfer->copyBufferToImage(this->stgRef, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
 
     runtime._cmd_bufferTransfer->end();
 
@@ -308,13 +323,12 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
 
     const vk::SubmitInfo submitInfoCopy{
         .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufsCopy.data()
+        .pCommandBuffers = *cmdBufsCopy.data(),
+        .signalSemaphoreCount = 1,
+        .pSignalSemaphores = &*this->uploadDone
     };
 
-    const vk::raii::Fence fenceCopy{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._transferQueue->submit(submitInfoCopy, *fenceCopy);
-    runtime.waitForFence(fenceCopy);
+    runtime._transferQueue->submit(submitInfoCopy, this->transferFence);
 
     auto imageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,

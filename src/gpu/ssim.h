@@ -23,8 +23,7 @@ namespace IQM::GPU {
     class SSIM {
     public:
         explicit SSIM(const VulkanRuntime &runtime);
-        SSIMResult computeMetric(const VulkanRuntime &runtime);
-        void prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        SSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
         [[nodiscard]] double computeMSSIM(const float *buffer, unsigned width, unsigned height) const;
 
         int kernelSize = 11;
@@ -49,11 +48,22 @@ namespace IQM::GPU {
         vk::raii::Pipeline pipelineGaussInput = VK_NULL_HANDLE;
         vk::raii::DescriptorSet descSetGaussInput = VK_NULL_HANDLE;
 
+        vk::raii::Semaphore uploadDone = VK_NULL_HANDLE;
+        vk::raii::Semaphore computeDone = VK_NULL_HANDLE;
+
+        vk::raii::Fence transferFence = VK_NULL_HANDLE;
+        vk::raii::Buffer stgInput = VK_NULL_HANDLE;
+        vk::raii::DeviceMemory stgInputMemory = VK_NULL_HANDLE;
+        vk::raii::Buffer stgRef = VK_NULL_HANDLE;
+        vk::raii::DeviceMemory stgRefMemory = VK_NULL_HANDLE;
+
         std::shared_ptr<VulkanImage> imageInput;
         std::shared_ptr<VulkanImage> imageRef;
         std::shared_ptr<VulkanImage> imageLuma;
         std::shared_ptr<VulkanImage> imageLumaBlurred;
         std::shared_ptr<VulkanImage> imageOut;
+
+        void prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
     };
 }
 

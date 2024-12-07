@@ -41,8 +41,7 @@ cv::Mat ssim(const IQM::Args& args) {
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    ssim.prepareImages(vulkan, imageAlpha, refAlpha);
-    auto result = ssim.computeMetric(vulkan);
+    auto result = ssim.computeMetric(vulkan, imageAlpha, refAlpha);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
