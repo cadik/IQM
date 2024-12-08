@@ -5,9 +5,9 @@
 
 #ifndef FSIM_H
 #define FSIM_H
-#include <opencv2/core/mat.hpp>
 #include <vkFFT.h>
 
+#include "../../input_image.h"
 #include "../../timestamps.h"
 #include "../base/vulkan_runtime.h"
 #include "steps/fsim_log_gabor.h"
@@ -25,7 +25,6 @@ namespace IQM::GPU {
     constexpr int FSIM_SCALES = 4;
 
     struct FSIMResult {
-        cv::Mat image;
         float fsim;
         float fsimc;
         Timestamps timestamps;
@@ -34,11 +33,11 @@ namespace IQM::GPU {
     class FSIM {
     public:
         explicit FSIM(const VulkanRuntime &runtime);
-        FSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        FSIMResult computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref);
 
     private:
-        static int computeDownscaleFactor(int cols, int rows);
-        void sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        static int computeDownscaleFactor(int width, int height);
+        void sendImagesToGpu(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref);
         void createDownscaledImages(const VulkanRuntime & runtime, int width_downscale, int height_downscale);
         void computeDownscaledImages(const VulkanRuntime & runtime, int, int, int);
         void createGradientMap(const VulkanRuntime & runtime, int, int);

@@ -6,28 +6,70 @@
 #include <iostream>
 #include <chrono>
 
-#include <opencv2/opencv.hpp>
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_FAILURE_USERMSG
+#include "stb_image.h"
+
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
 
 #include "args.h"
-#include "gpu/ssim.h"
 #include "gpu/base/vulkan_runtime.h"
 #include "debug_utils.h"
-#include "cpu/cw_ssim_ref.h"
-#include "gpu/svd.h"
+#include "input_image.h"
+
+#if COMPILE_SSIM
+#include <ssim.h>
+#endif
+
+#if COMPILE_SVD
+#include <svd.h>
+#endif
 
 #if COMPILE_FSIM
 #include <fsim.h>
 #endif
 
-cv::Mat ssim(const IQM::Args& args) {
-    const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::ImreadModes::IMREAD_COLOR);
-    cv::Mat imageAlpha;
-    cv::Mat refAlpha;
+InputImage load_image(const std::string &filename) {
+    // force all images to always open in RGBA format to prevent issues with separate RGB and RGBA loading
+    int x, y, channels;
+    unsigned char* data = stbi_load(filename.c_str(), &x, &y, &channels, 4);
+    if (data == nullptr) {
+        const auto err = stbi_failure_reason();
+        const auto msg = std::string("Failed to load image '" + filename + "', reason: " + err);
+        throw std::runtime_error(msg);
+    }
 
-    // convert to correct format for Vulkan
-    cvtColor(image, imageAlpha, cv::COLOR_BGR2RGBA);
-    cvtColor(ref, refAlpha, cv::COLOR_BGR2RGBA);
+    std::vector<unsigned char> dataVec(x * y * 4);
+    memcpy(dataVec.data(), data, x * y * 4 * sizeof(char));
+
+    stbi_image_free(data);
+
+    return InputImage{
+        .width = x,
+        .height = y,
+        .data = std::move(dataVec)
+    };
+}
+
+std::vector<unsigned char> convertFloatToChar(const std::vector<float>& data) {
+    std::vector<unsigned char> result(data.size());
+
+    for (int i = 0; i < data.size(); ++i) {
+        result[i] = static_cast<unsigned char>(data[i] * 255.0f);
+    }
+
+    return result;
+}
+
+void ssim(const IQM::Args& args) {
+#ifdef COMPILE_SSIM
+    auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
+
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
 
     const IQM::GPU::VulkanRuntime vulkan;
 
@@ -41,7 +83,7 @@ cv::Mat ssim(const IQM::Args& args) {
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = ssim.computeMetric(vulkan, imageAlpha, refAlpha);
+    auto result = ssim.computeMetric(vulkan, input, reference);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
@@ -53,39 +95,47 @@ cv::Mat ssim(const IQM::Args& args) {
         result.timestamps.print(start, end);
     }
 
-    cv::Mat outEightBit = cv::Mat(image.rows, image.cols, CV_8UC1);
-    outEightBit = result.image * 255.0;
+    if (args.outputPath.has_value()) {
+        auto converted = convertFloatToChar(result.imageData);
 
-    return outEightBit;
+        auto saveResult = stbi_write_png(args.outputPath.value().c_str(), result.width, result.height, 1, converted.data(), result.width * sizeof(unsigned char));
+        if (saveResult == 0) {
+            throw std::runtime_error("Failed to save output image");
+        }
+    }
+#else
+    throw std::runtime_error("SSIM support was not compiled");
+#endif
 }
 
-cv::Mat cw_ssim_ref(const IQM::Args& args) {
-    const cv::Mat image = imread(args.inputPath, cv::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::IMREAD_COLOR);
+void cw_ssim_ref(const IQM::Args& args) {
+    /*auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
+
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
 
     auto method = IQM::CPU::CW_SSIM_Ref();
 
     const auto start = std::chrono::high_resolution_clock::now();
-    auto out = method.computeMetric(image, ref);
+    method.computeMetric(image, ref);
     const auto end = std::chrono::high_resolution_clock::now();
 
     if (args.verbose) {
         auto execTime = std::chrono::duration_cast<std::chrono::microseconds>(end - start);
         std::cout << execTime << std::endl;
-    }
-
-    return out;
+    }*/
 }
 
-cv::Mat svd(const IQM::Args& args) {
-    const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::ImreadModes::IMREAD_COLOR);
-    cv::Mat imageAlpha;
-    cv::Mat refAlpha;
+void svd(const IQM::Args& args) {
+#ifdef COMPILE_SVD
+    auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
 
-    // convert to correct format for Vulkan
-    cvtColor(image, imageAlpha, cv::COLOR_BGR2RGBA);
-    cvtColor(ref, refAlpha, cv::COLOR_BGR2RGBA);
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
 
     const IQM::GPU::VulkanRuntime vulkan;
     IQM::GPU::SVD svd(vulkan);
@@ -98,7 +148,7 @@ cv::Mat svd(const IQM::Args& args) {
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = svd.computeMetric(vulkan, imageAlpha, refAlpha);
+    auto result = svd.computeMetric(vulkan, input, reference);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
@@ -110,19 +160,27 @@ cv::Mat svd(const IQM::Args& args) {
         result.timestamps.print(start, end);
     }
 
-    return result.image;
+    if (args.outputPath.has_value()) {
+        auto converted = convertFloatToChar(result.imageData);
+
+        auto saveResult = stbi_write_png(args.outputPath.value().c_str(), result.width, result.height, 1, converted.data(), result.width * sizeof(unsigned char));
+        if (saveResult == 0) {
+            throw std::runtime_error("Failed to save output image");
+        }
+    }
+#else
+    throw std::runtime_error("SVD support was not compiled");
+#endif
 }
 
-cv::Mat fsim(const IQM::Args& args) {
+void fsim(const IQM::Args& args) {
 #ifdef COMPILE_FSIM
-    const cv::Mat image = imread(args.inputPath, cv::ImreadModes::IMREAD_COLOR);
-    const cv::Mat ref = imread(args.refPath, cv::ImreadModes::IMREAD_COLOR);
-    cv::Mat imageAlpha;
-    cv::Mat refAlpha;
+    auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
 
-    // convert to correct format for Vulkan
-    cvtColor(image, imageAlpha, cv::COLOR_BGR2RGBA);
-    cvtColor(ref, refAlpha, cv::COLOR_BGR2RGBA);
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
 
     const IQM::GPU::VulkanRuntime vulkan;
     IQM::GPU::FSIM fsim(vulkan);
@@ -135,7 +193,7 @@ cv::Mat fsim(const IQM::Args& args) {
     initRenderDoc();
 
     auto start = std::chrono::high_resolution_clock::now();
-    auto result = fsim.computeMetric(vulkan, imageAlpha, refAlpha);
+    auto result = fsim.computeMetric(vulkan, input, reference);
     auto end = std::chrono::high_resolution_clock::now();
 
     // saves capture for debugging
@@ -146,8 +204,6 @@ cv::Mat fsim(const IQM::Args& args) {
     if (args.verbose) {
         result.timestamps.print(start, end);
     }
-
-    return result.image;
 #else
     throw std::runtime_error("FSIM support was not compiled");
 #endif
@@ -159,29 +215,24 @@ int main(int argc, const char **argv) {
         std::cout << "Selected method: " << IQM::method_name(args.method) << std::endl;
     }
 
-    cv::Mat out;
-
     try {
         switch (args.method) {
             case IQM::Method::SSIM:
-                out = ssim(args);
-            break;
+                ssim(args);
+                break;
             case IQM::Method::CW_SSIM_CPU:
-                out = cw_ssim_ref(args);
-            break;
+                break;
             case IQM::Method::SVD:
-                out = svd(args);
-            break;
+                svd(args);
+                break;
             case IQM::Method::FSIM:
-                out = fsim(args);
-            break;
+                fsim(args);
+                break;
         }
     } catch (const std::exception& e) {
         std::cerr << e.what() << std::endl;
         exit(-1);
     }
 
-    const auto outPath = args.outputPath.value_or("out.png");
-    cv::imwrite(outPath, out);
     return 0;
 }

@@ -27,27 +27,32 @@ IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 }
 
-IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
     SVDResult res;
 
-    auto bufSize = 2 * 8 * (image.cols / 8) * (image.rows / 8);
-    auto outBufSize = (image.cols / 8) * (image.rows / 8);
+    auto bufSize = 2 * 8 * (image.width / 8) * (image.height / 8);
+    auto outBufSize = (image.width / 8) * (image.height / 8);
     std::vector<float> data(bufSize);
 
     this->prepareBuffers(runtime, bufSize * sizeof(float), outBufSize * sizeof(float));
 
+    cv::Mat inputColor(image.data);
+    inputColor = inputColor.reshape(4, image.height);
+    cv::Mat refColor(ref.data);
+    refColor = refColor.reshape(4, image.height);
+
     cv::Mat greyInput;
-    cv::cvtColor(image, greyInput, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(inputColor, greyInput, cv::COLOR_RGB2GRAY);
     cv::Mat greyRef;
-    cv::cvtColor(ref, greyRef, cv::COLOR_BGR2GRAY);
+    cv::cvtColor(refColor, greyRef, cv::COLOR_RGB2GRAY);
     cv::Mat inputFloat;
     greyInput.convertTo(inputFloat, CV_32F);
     cv::Mat refFloat;
     greyRef.convertTo(refFloat, CV_32F);
 
     // only process full 8x8 blocks
-    for (int x = 0; (x + 8) < image.cols; x+=8) {
-        for (int y = 0; (y + 8) < image.rows; y+=8) {
+    for (int x = 0; (x + 8) < image.width; x+=8) {
+        for (int y = 0; (y + 8) < image.height; y+=8) {
             cv::Rect crop(x, y, 8, 8);
             cv::Mat srcCrop = inputFloat(crop);
             cv::Mat refCrop = refFloat(crop);
@@ -55,7 +60,7 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
             auto srcSvd = cv::SVD(srcCrop, cv::SVD::NO_UV).w;
             auto refSvd = cv::SVD(refCrop, cv::SVD::NO_UV).w;
 
-            auto start = ((y / 8) * (image.cols / 8) + (x / 8)) * 2;
+            auto start = ((y / 8) * (image.width / 8) + (x / 8)) * 2;
 
             memcpy(data.data() + (start) * 8, srcSvd.data, 8 * sizeof(float));
             memcpy(data.data() + (start + 1) * 8, refSvd.data, 8 * sizeof(float));
@@ -105,14 +110,14 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
     this->copyFromGpu(runtime, outBufSize * sizeof(float));
 
     cv::Mat dummy;
-    dummy.create(image.rows / 8, image.cols / 8, CV_32F);
+    dummy.create(image.height / 8, image.width / 8, CV_32F);
     void * outBufData = this->stgMemory.mapMemory(0, outBufSize * sizeof(float), {});
     memcpy(dummy.data, outBufData, outBufSize * sizeof(float));
     this->stgMemory.unmapMemory();
 
     res.timestamps.mark("end GPU writeback");
 
-    std::vector<float> blocks((image.rows / 8) * (image.cols / 8));
+    std::vector<float> blocks((image.height / 8) * (image.width / 8));
     memcpy(blocks.data(), dummy.data, outBufSize * sizeof(float));
     std::ranges::sort(blocks);
 
@@ -128,9 +133,12 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
     // remap range of output image
     double min, max;
     cv::minMaxLoc(dummy, &min, &max);
-    dummy.forEach<float>([max](float& i, const int []) {i = (i / static_cast<float>(max)) * 255.0f;});
+    dummy.forEach<float>([max](float& i, const int []) {i = i / static_cast<float>(max);});
 
-    res.image = dummy;
+    res.height = dummy.rows;
+    res.width = dummy.cols;
+    res.imageData = std::vector<float>(dummy.rows * dummy.cols);
+    memcpy(res.imageData.data(), dummy.data, dummy.rows * dummy.cols * sizeof(float));
 
     return res;
 }

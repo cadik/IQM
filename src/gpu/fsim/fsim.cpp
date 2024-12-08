@@ -65,13 +65,10 @@ final_multiply(runtime)
     this->pipelineExtractLuma = runtime.createComputePipeline(this->kernelExtractLuma, this->layoutExtractLuma);
 }
 
-IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
-    assert(image.rows == ref.rows);
-    assert(image.cols == ref.cols);
-
+IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
     FSIMResult result;
 
-    const int F = computeDownscaleFactor(image.cols, image.rows);
+    const int F = computeDownscaleFactor(image.width, image.height);
 
     result.timestamps.mark("downscale factor computed");
 
@@ -79,8 +76,8 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
 
     result.timestamps.mark("images sent to gpu");
 
-    const auto widthDownscale = static_cast<int>(std::round(static_cast<float>(image.cols) / static_cast<float>(F)));
-    const auto heightDownscale = static_cast<int>(std::round(static_cast<float>(image.rows) / static_cast<float>(F)));
+    const auto widthDownscale = static_cast<int>(std::round(static_cast<float>(image.width) / static_cast<float>(F)));
+    const auto heightDownscale = static_cast<int>(std::round(static_cast<float>(image.height) / static_cast<float>(F)));
 
     this->initFftLibrary(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FFT library initialized");
@@ -167,8 +164,6 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     );
     result.timestamps.mark("FSIM, FSIMc computed");
 
-    result.image = image;
-
     result.fsim = metrics.first;
     result.fsimc = metrics.second;
 
@@ -177,13 +172,13 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     return result;
 }
 
-int IQM::GPU::FSIM::computeDownscaleFactor(const int cols, const int rows) {
-    auto smallerDim = std::min(cols, rows);
+int IQM::GPU::FSIM::computeDownscaleFactor(const int width, const int height) {
+    auto smallerDim = std::min(width, height);
     return std::max(1, static_cast<int>(std::round(smallerDim / 256.0)));
 }
 
-void IQM::GPU::FSIM::sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
-    const auto size = image.rows * image.cols * image.channels();
+void IQM::GPU::FSIM::sendImagesToGpu(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
+    const auto size = image.width * image.height * 4;
     auto [stgBuf, stgMem] = runtime.createBuffer(
         size,
         vk::BufferUsageFlagBits::eTransferSrc,
@@ -195,24 +190,24 @@ void IQM::GPU::FSIM::sendImagesToGpu(const VulkanRuntime &runtime, const cv::Mat
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
 
-    auto imageParameters = ImageParameters(image.cols, image.rows);
+    auto imageParameters = ImageParameters(image.width, image.height);
 
     stgBuf.bindMemory(stgMem, 0);
     stgRefBuf.bindMemory(stgRefMem, 0);
 
     void * inBufData = stgMem.mapMemory(0, imageParameters.height * imageParameters.width * 4, {});
-    memcpy(inBufData, image.data, imageParameters.height * imageParameters.width * 4);
+    memcpy(inBufData, image.data.data(), imageParameters.height * imageParameters.width * 4);
     stgMem.unmapMemory();
 
     inBufData = stgRefMem.mapMemory(0, imageParameters.height * imageParameters.width * 4, {});
-    memcpy(inBufData, ref.data, imageParameters.height * imageParameters.width * 4);
+    memcpy(inBufData, ref.data.data(), imageParameters.height * imageParameters.width * 4);
     stgRefMem.unmapMemory();
 
     vk::ImageCreateInfo srcImageInfo = {
         .flags = {},
         .imageType = vk::ImageType::e2D,
         .format = vk::Format::eR8G8B8A8Unorm,
-        .extent = vk::Extent3D(image.cols, image.rows, 1),
+        .extent = vk::Extent3D(image.width, image.height, 1),
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = vk::SampleCountFlagBits::e1,

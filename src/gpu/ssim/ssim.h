@@ -1,5 +1,5 @@
 /*
-* Image Quality Metrics
+ * Image Quality Metrics
  * Petr Volf - 2024
  */
 
@@ -7,15 +7,17 @@
 #define SSIM_H
 
 #include <vector>
-#include <opencv2/core/mat.hpp>
 
-#include "img_params.h"
-#include "base/vulkan_runtime.h"
-#include "../timestamps.h"
+#include "../../input_image.h"
+#include "../img_params.h"
+#include "../base/vulkan_runtime.h"
+#include "../../timestamps.h"
 
 namespace IQM::GPU {
     struct SSIMResult {
-        cv::Mat image;
+        std::vector<float> imageData;
+        unsigned int width;
+        unsigned int height;
         float mssim;
         Timestamps timestamps;
     };
@@ -23,7 +25,7 @@ namespace IQM::GPU {
     class SSIM {
     public:
         explicit SSIM(const VulkanRuntime &runtime);
-        SSIMResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        SSIMResult computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref);
         [[nodiscard]] double computeMSSIM(const float *buffer, unsigned width, unsigned height) const;
 
         int kernelSize = 11;
@@ -63,7 +65,7 @@ namespace IQM::GPU {
         std::shared_ptr<VulkanImage> imageLumaBlurred;
         std::shared_ptr<VulkanImage> imageOut;
 
-        void prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        void prepareImages(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref);
     };
 }
 

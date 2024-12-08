@@ -4,10 +4,9 @@
  */
 
 #include "args.h"
+#include <cstring>
 
 IQM::Args::Args(const unsigned argc, const char *argv[]) {
-    this->outputPath = std::nullopt;
-
     bool parsedMethod = false;
     bool parsedInput = false;
     bool parsedReference = false;
@@ -27,6 +26,8 @@ IQM::Args::Args(const unsigned argc, const char *argv[]) {
                 } else if (strcmp(argv[i + 1], "FSIM") == 0) {
                     this->method = Method::FSIM;
                     parsedMethod = true;
+                } else {
+                    throw std::runtime_error("Unknown method");
                 }
             } else if (strcmp(argv[i], "--input") == 0) {
                 this->inputPath = std::string(argv[i + 1]);

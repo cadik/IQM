@@ -9,12 +9,15 @@
 #include <vector>
 #include <opencv2/core/mat.hpp>
 
-#include "base/vulkan_runtime.h"
-#include "../timestamps.h"
+#include "../../input_image.h"
+#include "../base/vulkan_runtime.h"
+#include "../../timestamps.h"
 
 namespace IQM::GPU {
     struct SVDResult {
-        cv::Mat image;
+        std::vector<float> imageData;
+        unsigned int width;
+        unsigned int height;
         float msvd;
         Timestamps timestamps;
     };
@@ -22,7 +25,7 @@ namespace IQM::GPU {
     class SVD {
     public:
         explicit SVD(const VulkanRuntime &runtime);
-        SVDResult computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref);
+        SVDResult computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref);
 
     private:
         void prepareBuffers(const VulkanRuntime &runtime, size_t sizeInput, size_t sizeOutput);

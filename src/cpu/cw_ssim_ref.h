@@ -6,12 +6,16 @@
 #ifndef CW_SSIM_REF_H
 #define CW_SSIM_REF_H
 
-#include <opencv2/opencv.hpp>
-
 namespace IQM::CPU {
+    struct CW_SSIMInputImage {
+        void * data;
+        unsigned int width;
+        unsigned int height;
+    };
+
     class CW_SSIM_Ref {
     public:
-        [[nodiscard]] cv::Mat computeMetric(const cv::Mat &input, const cv::Mat &reference) const;
+        void computeMetric(const CW_SSIMInputImage &input, const CW_SSIMInputImage &reference) const;
 
         float k = 0.0;
     };

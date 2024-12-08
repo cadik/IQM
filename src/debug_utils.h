@@ -1,5 +1,5 @@
 /*
-* Image Quality Metrics
+ * Image Quality Metrics
  * Petr Volf - 2024
  */
 

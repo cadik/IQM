@@ -1,5 +1,5 @@
 /*
-* Image Quality Metrics
+ * Image Quality Metrics
  * Petr Volf - 2024
  */
 
@@ -56,7 +56,7 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
     this->transferFence = runtime._device.createFence(vk::FenceCreateInfo{});
 }
 
-IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
+IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
     this->prepareImages(runtime, image, ref);
 
     SSIMResult res;
@@ -212,22 +212,25 @@ IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime,
 
     res.timestamps.mark("end GPU pipeline");
 
-    cv::Mat output;
-    output.create(static_cast<int>(this->imageParameters.height), static_cast<int>(this->imageParameters.width), CV_32FC1);
+    std::vector<float> outputData(this->imageParameters.height * this->imageParameters.width);
     void * outBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * sizeof(float), {});
-    memcpy(output.data, outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
+    memcpy(outputData.data(), outBufData, this->imageParameters.height * this->imageParameters.width * sizeof(float));
     res.timestamps.mark("end copy from GPU");
 
     res.mssim = this->computeMSSIM( static_cast<float*>(outBufData), this->imageParameters.width, this->imageParameters.height);
     res.timestamps.mark("end MSSIM compute");
     stgMem.unmapMemory();
-    res.image = output;
+
+    res.imageData = std::move(outputData);
+    res.height = this->imageParameters.height;
+    res.width = this->imageParameters.width;
 
     return res;
 }
 
-void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &image, const cv::Mat &ref) {
-    const auto size = image.rows * image.cols * image.channels();
+void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
+    // always 4 channels on input, with 1B per channel
+    const auto size = image.width * image.height * 4;
     auto [stgBuf, stgMem] = runtime.createBuffer(
         size,
         vk::BufferUsageFlagBits::eTransferSrc,
@@ -239,20 +242,18 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
 
-    assert(image.rows == ref.rows);
-    assert(image.cols == ref.cols);
-    this->imageParameters.height = image.rows;
-    this->imageParameters.width = image.cols;
+    this->imageParameters.height = image.height;
+    this->imageParameters.width = image.width;
 
     stgBuf.bindMemory(stgMem, 0);
     stgRefBuf.bindMemory(stgRefMem, 0);
 
-    void * inBufData = stgMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * 4, {});
-    memcpy(inBufData, image.data, this->imageParameters.height * this->imageParameters.width * 4);
+    void * inBufData = stgMem.mapMemory(0, size, {});
+    memcpy(inBufData, image.data.data(), size);
     stgMem.unmapMemory();
 
-    inBufData = stgRefMem.mapMemory(0, this->imageParameters.height * this->imageParameters.width * 4, {});
-    memcpy(inBufData, ref.data, this->imageParameters.height * this->imageParameters.width * 4);
+    inBufData = stgRefMem.mapMemory(0, size, {});
+    memcpy(inBufData, ref.data.data(), size);
     stgRefMem.unmapMemory();
 
     this->stgInput = std::move(stgBuf);
@@ -264,7 +265,7 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const cv::Mat &
         .flags = {},
         .imageType = vk::ImageType::e2D,
         .format = vk::Format::eR8G8B8A8Unorm,
-        .extent = vk::Extent3D(image.cols, image.rows, 1),
+        .extent = vk::Extent3D(image.width, image.height, 1),
         .mipLevels = 1,
         .arrayLayers = 1,
         .samples = vk::SampleCountFlagBits::e1,
