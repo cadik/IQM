@@ -23,7 +23,10 @@ IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
 
     this->descSet = std::move(vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo}.front());
 
-    this->layout = runtime.createPipelineLayout(layouts, {});
+    // 1x int - buffer size
+    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(int) * 1);
+
+    this->layout = runtime.createPipelineLayout(layouts, ranges);
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 }
 
@@ -35,6 +38,8 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
     std::vector<float> data(bufSize);
 
     this->prepareBuffers(runtime, bufSize * sizeof(float), outBufSize * sizeof(float));
+
+    res.timestamps.mark("buffers prepared");
 
     cv::Mat inputColor(image.data);
     inputColor = inputColor.reshape(4, image.height);
@@ -50,9 +55,11 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
     cv::Mat refFloat;
     greyRef.convertTo(refFloat, CV_32F);
 
+    res.timestamps.mark("image converted");
+
     // only process full 8x8 blocks
-    for (int x = 0; (x + 8) < image.width; x+=8) {
-        for (int y = 0; (y + 8) < image.height; y+=8) {
+    for (int y = 0; (y + 8) < image.height; y+=8) {
+        for (int x = 0; (x + 8) < image.width; x+=8) {
             cv::Rect crop(x, y, 8, 8);
             cv::Mat srcCrop = inputFloat(crop);
             cv::Mat refCrop = refFloat(crop);
@@ -82,9 +89,10 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
+    runtime._cmd_buffer->pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, bufSize);
 
-    //shader takes 16 values, reduces to 1
-    auto groupsX = bufSize / 16;
+    // group takes 128 values, reduces to 8 values
+    auto groupsX = (bufSize / 128) + 1;
     runtime._cmd_buffer->dispatch(groupsX, 1, 1);
 
     runtime._cmd_buffer->end();
