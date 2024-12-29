@@ -7,6 +7,8 @@
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgproc.hpp>
+#include <algorithm>
+#include <execution>
 
 IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/svd.spv");
@@ -57,8 +59,14 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
 
     res.timestamps.mark("image converted");
 
-    // only process full 8x8 blocks
+    // create parallel iterator
+    std::vector<int> nums;
     for (int y = 0; (y + 8) < image.height; y+=8) {
+        nums.push_back(y);
+    }
+
+    std::for_each(std::execution::par, nums.begin(), nums.end(), [&](const int &y) {
+        // only process full 8x8 blocks
         for (int x = 0; (x + 8) < image.width; x+=8) {
             cv::Rect crop(x, y, 8, 8);
             cv::Mat srcCrop = inputFloat(crop);
@@ -72,7 +80,7 @@ IQM::GPU::SVDResult IQM::GPU::SVD::computeMetric(const VulkanRuntime &runtime, c
             memcpy(data.data() + (start) * 8, srcSvd.data, 8 * sizeof(float));
             memcpy(data.data() + (start + 1) * 8, refSvd.data, 8 * sizeof(float));
         }
-    }
+    });
 
     res.timestamps.mark("end SVD compute");
 

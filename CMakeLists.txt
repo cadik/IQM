@@ -73,11 +73,11 @@ add_executable(${PROFILE_NAME} src/profile.cpp
 target_compile_definitions(${PROFILE_NAME} PUBLIC PROFILE)
 
 target_compile_definitions(${PROJECT_NAME} PUBLIC -DVK_API_VERSION=13)
-target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} Vulkan::Vulkan )
+target_link_libraries(${PROJECT_NAME} ${OpenCV_LIBS} Vulkan::Vulkan tbb)
 target_compile_definitions(${PROFILE_NAME} PUBLIC -DVK_API_VERSION=13)
 
 find_package(glfw3)
-target_link_libraries(${PROJECT_NAME}-profile ${OpenCV_LIBS} Vulkan::Vulkan glfw)
+target_link_libraries(${PROJECT_NAME}-profile ${OpenCV_LIBS} Vulkan::Vulkan glfw tbb)
 
 if (SSIM)
     target_link_libraries(${PROJECT_NAME} IQM-SSIM)
