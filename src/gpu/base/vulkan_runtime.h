@@ -20,6 +20,7 @@ namespace IQM::GPU {
         [[nodiscard]] vk::raii::Pipeline createComputePipeline(const vk::raii::ShaderModule &shader, const vk::raii::PipelineLayout &layout) const;
         [[nodiscard]] std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> createBuffer(unsigned bufferSize, vk::BufferUsageFlags bufferFlags, vk::MemoryPropertyFlags memoryFlags) const;
         [[nodiscard]] VulkanImage createImage(const vk::ImageCreateInfo &imageInfo) const;
+        [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<std::pair<vk::DescriptorType, uint32_t>> &stub) const;
         [[nodiscard]] vk::raii::DescriptorSetLayout createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const;
         void setImageLayout(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const vk::raii::Image &image, vk::ImageLayout srcLayout, vk::ImageLayout targetLayout) const;
         static void initImages(const std::shared_ptr<vk::raii::CommandBuffer> &cmd_buf, const std::vector<std::shared_ptr<VulkanImage>> &images);
@@ -39,6 +40,8 @@ namespace IQM::GPU {
             return std::make_pair(groupsX, groupsY);
         }
         void waitForFence(const vk::raii::Fence&) const;
+
+        static vk::WriteDescriptorSet createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorImageInfo> &imgInfos);
 
         std::string selectedDevice;
 

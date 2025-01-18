@@ -627,6 +627,28 @@ std::vector<const char *> IQM::GPU::VulkanRuntime::getLayers() {
     return {};
 }
 
+vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<std::pair<vk::DescriptorType, uint32_t>> &stub) const {
+    auto bindings = std::vector<vk::DescriptorSetLayoutBinding>(stub.size());
+
+    for (unsigned i = 0; i < stub.size(); i++) {
+        const auto &[descType, count] = stub[i];
+        bindings[i].descriptorCount = count;
+        bindings[i].descriptorType = descType;
+
+        // assume only compute stages everywhere
+        bindings[i].stageFlags = vk::ShaderStageFlagBits::eCompute;
+        // recompute indices sequentially
+        bindings[i].binding = i;
+    }
+
+    auto info = vk::DescriptorSetLayoutCreateInfo {
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    };
+
+    return vk::raii::DescriptorSetLayout {this->_device, info};
+}
+
 vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const {
     auto info = vk::DescriptorSetLayoutCreateInfo {
         .bindingCount = static_cast<uint32_t>(bindings.size()),
@@ -656,3 +678,19 @@ void IQM::GPU::VulkanRuntime::waitForFence(const vk::raii::Fence &fence) const {
         throw std::runtime_error("Failed to wait for fence");
     }
 }
+
+vk::WriteDescriptorSet IQM::GPU::VulkanRuntime::createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorImageInfo> &imgInfos) {
+    vk::WriteDescriptorSet writeSet{
+        .dstSet = descSet,
+        .dstBinding = dstBinding,
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32_t>(imgInfos.size()),
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = imgInfos.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    return writeSet;
+}
+

@@ -8,6 +8,7 @@ option(ENABLE_RENDERDOC "Enable RenderDoc capture support" OFF)
 option(SSIM "Compile SSIM Metric" ON)
 option(SVD "Compile SVD Metric" ON)
 option(FSIM "Compile FSIM Metric" ON)
+option(FLIP "Compile FLIP Metric" ON)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -DVULKAN_HPP_NO_CONSTRUCTORS")
@@ -39,6 +40,11 @@ endif (SVD)
 if (FSIM)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCOMPILE_FSIM")
     add_subdirectory(src/gpu/fsim)
+endif ()
+
+if (FLIP)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DCOMPILE_FLIP")
+    add_subdirectory(src/gpu/flip)
 endif ()
 
 add_executable(${PROJECT_NAME} src/main.cpp
@@ -101,3 +107,8 @@ if (FSIM)
     target_link_libraries(${PROJECT_NAME} IQM-FSIM VkFFT SPIRV glslang)
     target_link_libraries(${PROFILE_NAME} IQM-FSIM VkFFT SPIRV glslang)
 endif (FSIM)
+
+if (FLIP)
+    target_link_libraries(${PROJECT_NAME} IQM-FLIP)
+    target_link_libraries(${PROFILE_NAME} IQM-FLIP)
+endif (FLIP)
