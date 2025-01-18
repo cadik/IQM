@@ -24,18 +24,8 @@ IQM::GPU::FSIMNoisePower::FSIMNoisePower(const VulkanRuntime &runtime) {
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageBuffer, 1},
+        {vk::DescriptorType::eStorageBuffer, 1},
     }));
 
     const std::vector layouts = {
@@ -95,39 +85,33 @@ void IQM::GPU::FSIMNoisePower::computeNoisePower(const VulkanRuntime &runtime, c
     );
     bufTemp.bindMemory(memTemp, 0);
 
-    vk::DescriptorBufferInfo bufInfoIn {
-        .buffer = fftBuffer,
-        .offset = 0,
-        .range = 2 * width * height * sizeof(float) * FSIM_ORIENTATIONS * FSIM_SCALES * 3,
+    auto bufInfoIn = std::vector {
+        vk::DescriptorBufferInfo {
+            .buffer = fftBuffer,
+            .offset = 0,
+            .range = 2 * width * height * sizeof(float) * FSIM_ORIENTATIONS * FSIM_SCALES * 3,
+        }
     };
 
-    vk::DescriptorBufferInfo bufInfoOut {
-        .buffer = bufTemp,
-        .offset = 0,
-        .range = width * height * sizeof(float) * FSIM_ORIENTATIONS * 2,
+    auto bufInfoOut = std::vector {
+        vk::DescriptorBufferInfo {
+            .buffer = bufTemp,
+            .offset = 0,
+            .range = width * height * sizeof(float) * FSIM_ORIENTATIONS * 2,
+        }
     };
 
-    const vk::WriteDescriptorSet writeSetIn{
-        .dstSet = this->descSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = &bufInfoIn,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetIn = VulkanRuntime::createWriteSet(
+        this->descSet,
+        0,
+        bufInfoIn
+    );
 
-    const vk::WriteDescriptorSet writeSetOut{
-        .dstSet = this->descSet,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = &bufInfoOut,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetOut = VulkanRuntime::createWriteSet(
+        this->descSet,
+        1,
+        bufInfoOut
+    );
 
     const std::vector writes = {
         writeSetIn, writeSetOut,

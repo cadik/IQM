@@ -77,27 +77,17 @@ void IQM::GPU::FSIMLogGabor::prepareImageStorage(const VulkanRuntime &runtime, c
         auto imageInfosLowpass = VulkanRuntime::createImageInfos({lowpass});
         auto imageInfos = VulkanRuntime::createImageInfos({this->imageLogGaborFilters[i]});
 
-        const vk::WriteDescriptorSet writeSetLowpass{
-            .dstSet = this->descSets[i],
-            .dstBinding = 0,
-            .dstArrayElement = 0,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .pImageInfo = imageInfosLowpass.data(),
-            .pBufferInfo = nullptr,
-            .pTexelBufferView = nullptr,
-        };
+        const auto writeSetLowpass = VulkanRuntime::createWriteSet(
+            this->descSets[i],
+            0,
+            imageInfosLowpass
+        );
 
-        const vk::WriteDescriptorSet writeSet{
-            .dstSet = this->descSets[i],
-            .dstBinding = 1,
-            .dstArrayElement = 0,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .pImageInfo = imageInfos.data(),
-            .pBufferInfo = nullptr,
-            .pTexelBufferView = nullptr,
-        };
+        const auto writeSet = VulkanRuntime::createWriteSet(
+            this->descSets[i],
+            1,
+            imageInfos
+        );
 
         const std::vector writes = {
             writeSetLowpass, writeSet,

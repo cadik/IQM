@@ -336,17 +336,12 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const InputImag
         this->imageLumaBlurred,
         this->imageOut,
     });
-    
-    vk::WriteDescriptorSet writeSet{
-        .dstSet = this->descSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 3,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+
+    auto writeSet = VulkanRuntime::createWriteSet(
+        this->descSet,
+        0,
+        imageInfos
+    );
 
     auto lumapackImageInfos = VulkanRuntime::createImageInfos({
         this->imageInput,
@@ -354,32 +349,22 @@ void IQM::GPU::SSIM::prepareImages(const VulkanRuntime &runtime, const InputImag
         this->imageLuma,
     });
 
-    vk::WriteDescriptorSet writeSetLumapack{
-        .dstSet = this->descSetLumapack,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 3,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = lumapackImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetLumapack = VulkanRuntime::createWriteSet(
+        this->descSetLumapack,
+        0,
+        lumapackImageInfos
+    );
 
     auto gaussInputImageInfos = VulkanRuntime::createImageInfos({
         this->imageLuma,
         this->imageLumaBlurred,
     });
 
-    vk::WriteDescriptorSet writeSetGauss{
-        .dstSet = this->descSetGaussInput,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = gaussInputImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetGauss = VulkanRuntime::createWriteSet(
+        this->descSetGaussInput,
+        0,
+        gaussInputImageInfos
+    );
 
     runtime._device.updateDescriptorSets({writeSet, writeSetLumapack, writeSetGauss}, nullptr);
 }

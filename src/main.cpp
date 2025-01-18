@@ -279,6 +279,7 @@ int main(int argc, const char **argv) {
                 break;
             case IQM::Method::FSIM:
                 fsim(args);
+                break;
             case IQM::Method::FLIP:
                 flip(args);
                 break;

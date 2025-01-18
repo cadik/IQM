@@ -13,27 +13,12 @@ IQM::GPU::FSIMEstimateEnergy::FSIMEstimateEnergy(const VulkanRuntime &runtime) {
 
     //custom layout for this pass
     this->estimateEnergyDescSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = FSIM_ORIENTATIONS * 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageBuffer, 1},
+        {vk::DescriptorType::eStorageBuffer, FSIM_ORIENTATIONS * 2},
     }));
 
     this->sumDescSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = FSIM_ORIENTATIONS * 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
+        {vk::DescriptorType::eStorageBuffer, FSIM_ORIENTATIONS * 2},
     }));
 
     const std::vector layouts = {
@@ -165,22 +150,19 @@ void IQM::GPU::FSIMEstimateEnergy::prepareBufferStorage(const VulkanRuntime &run
         this->energyBuffersMemory.emplace_back(std::move(mem));
     }
 
-    const vk::DescriptorBufferInfo fftBufInfo {
-        .buffer = fftBuf,
-        .offset = 0,
-        .range = sizeof(float) * width * height * 2 * FSIM_ORIENTATIONS * FSIM_SCALES * 3,
+    auto const fftBufInfo = std::vector{
+        vk::DescriptorBufferInfo {
+            .buffer = fftBuf,
+            .offset = 0,
+            .range = sizeof(float) * width * height * 2 * FSIM_ORIENTATIONS * FSIM_SCALES * 3,
+        }
     };
 
-    const vk::WriteDescriptorSet writeSetIn{
-        .dstSet = this->estimateEnergyDescSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = &fftBufInfo,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetIn = VulkanRuntime::createWriteSet(
+        this->estimateEnergyDescSet,
+        0,
+        fftBufInfo
+    );
 
     std::vector<vk::DescriptorBufferInfo> outBuffers(2 * FSIM_ORIENTATIONS);
     for (int i = 0; i < 2 * FSIM_ORIENTATIONS; i++) {
@@ -189,27 +171,17 @@ void IQM::GPU::FSIMEstimateEnergy::prepareBufferStorage(const VulkanRuntime &run
         outBuffers[i].range = bufferSize;
     }
 
-    const vk::WriteDescriptorSet writeSetBuf{
-        .dstSet = this->estimateEnergyDescSet,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 2 * FSIM_ORIENTATIONS,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = outBuffers.data(),
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetBuf = VulkanRuntime::createWriteSet(
+        this->estimateEnergyDescSet,
+        1,
+        outBuffers
+    );
 
-    const vk::WriteDescriptorSet writeSetSum{
-        .dstSet = this->sumDescSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2 * FSIM_ORIENTATIONS,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = outBuffers.data(),
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetSum = VulkanRuntime::createWriteSet(
+        this->sumDescSet,
+        0,
+        outBuffers
+    );
 
     const std::vector writes = {
         writeSetIn, writeSetBuf, writeSetSum

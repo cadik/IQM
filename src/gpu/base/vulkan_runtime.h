@@ -42,6 +42,7 @@ namespace IQM::GPU {
         void waitForFence(const vk::raii::Fence&) const;
 
         static vk::WriteDescriptorSet createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorImageInfo> &imgInfos);
+        static vk::WriteDescriptorSet createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorBufferInfo> &bufInfos);
 
         std::string selectedDevice;
 

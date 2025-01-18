@@ -12,30 +12,10 @@ IQM::GPU::FSIMPhaseCongruency::FSIMPhaseCongruency(const VulkanRuntime &runtime)
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = FSIM_ORIENTATIONS * 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 3,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = FSIM_ORIENTATIONS * 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageBuffer, 1},
+        {vk::DescriptorType::eStorageBuffer, FSIM_ORIENTATIONS * 2},
+        {vk::DescriptorType::eStorageImage, FSIM_ORIENTATIONS * 2},
     }));
 
     const std::vector layouts = {
@@ -137,34 +117,25 @@ void IQM::GPU::FSIMPhaseCongruency::prepareImageStorage(
 
     auto images = VulkanRuntime::createImageInfos({this->pcInput, this->pcRef});
 
-    const vk::WriteDescriptorSet writePc{
-        .dstSet = this->descSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<uint32_t>(images.size()),
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = images.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
+    const auto writePc = VulkanRuntime::createWriteSet(
+        this->descSet,
+        0,
+        images
+    );
+
+     auto noiseBuf = std::vector{
+         vk::DescriptorBufferInfo {
+            .buffer = noiseLevels,
+            .offset = 0,
+            .range = 2 * FSIM_ORIENTATIONS * sizeof(float),
+         }
     };
 
-    vk::DescriptorBufferInfo noiseBuf {
-        .buffer = noiseLevels,
-        .offset = 0,
-        .range = 2 * FSIM_ORIENTATIONS * sizeof(float),
-    };
-
-    const vk::WriteDescriptorSet writeNoiseLevelsSum{
-        .dstSet = this->descSet,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = &noiseBuf,
-        .pTexelBufferView = nullptr,
-    };
-
+    const auto writeNoiseLevelsSum = VulkanRuntime::createWriteSet(
+        this->descSet,
+        1,
+        noiseBuf
+    );
 
     std::vector<vk::DescriptorBufferInfo> energyBufs(2 * FSIM_ORIENTATIONS);
     for (int i = 0; i < 2 * FSIM_ORIENTATIONS; i++) {
@@ -173,29 +144,19 @@ void IQM::GPU::FSIMPhaseCongruency::prepareImageStorage(
         energyBufs[i].range = sizeof(float);
     }
 
-    const vk::WriteDescriptorSet writeEnergyLevels{
-        .dstSet = this->descSet,
-        .dstBinding = 2,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<uint32_t>(energyBufs.size()),
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = energyBufs.data(),
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeEnergyLevels = VulkanRuntime::createWriteSet(
+        this->descSet,
+        2,
+        energyBufs
+    );
 
     auto filterResInfos = VulkanRuntime::createImageInfos(filterRes);
 
-    const vk::WriteDescriptorSet writeFilterRes{
-        .dstSet = this->descSet,
-        .dstBinding = 3,
-        .dstArrayElement = 0,
-        .descriptorCount = static_cast<uint32_t>(filterResInfos.size()),
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = filterResInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeFilterRes = VulkanRuntime::createWriteSet(
+        this->descSet,
+        3,
+        filterResInfos
+    );
 
     const std::vector writes = {
         writePc, writeNoiseLevelsSum, writeEnergyLevels, writeFilterRes
