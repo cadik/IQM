@@ -73,6 +73,7 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
 
 IQM::GPU::FLIPResult IQM::GPU::FLIP::computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref, const FLIPArguments &args) {
     FLIPResult res;
+    runtime._device.resetFences({this->transferFence});
 
     auto pixels_per_degree = args.monitor_distance * (args.monitor_resolution_x / args.monitor_width) * (std::numbers::pi / 180.0);
     int gaussian_kernel_size = 2 * static_cast<int>(std::ceil(3 * 0.5 * 0.082 * pixels_per_degree)) + 1;

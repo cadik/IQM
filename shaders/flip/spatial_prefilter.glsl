@@ -9,7 +9,7 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, r32f) uniform readonly image2D filter_img[3];
+layout(set = 0, binding = 1, rgba32f) uniform readonly image2D filter_img;
 layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D output_img[2];
 
 const mat3 XYZ_TO_RGB = mat3(
@@ -35,7 +35,7 @@ void main() {
         return;
     }
 
-    int halfSize = imageSize(filter_img[0]).x / 2;
+    int halfSize = imageSize(filter_img).x / 2;
 
     vec3 opponent = vec3(0.0);
 
@@ -49,11 +49,9 @@ void main() {
 
             vec3 ycc = imageLoad(input_img[z], ivec2(actualX, actualY)).xyz;
 
-            float filt_y = imageLoad(filter_img[0], ivec2(filterX, filterY)).x;
-            float filt_rg = imageLoad(filter_img[1], ivec2(filterX, filterY)).x;
-            float filt_by = imageLoad(filter_img[2], ivec2(filterX, filterY)).x;
+            vec3 filter_val = imageLoad(filter_img, ivec2(filterX, filterY)).xyz;
 
-            opponent += ycc * vec3(filt_y, filt_rg, filt_by);
+            opponent += ycc * filter_val;
         }
     }
 

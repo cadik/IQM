@@ -11,12 +11,12 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
     this->csfPrefilterKernel = runtime.createShaderModule("../shaders_out/flip/spatial_prefilter.spv");
 
     this->spatialFilterCreateDescSetLayout = runtime.createDescLayout({
-        {vk::DescriptorType::eStorageImage, 3},
+        {vk::DescriptorType::eStorageImage, 1},
     });
 
     this->csfPrefilterDescSetLayout = runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 2},
-        {vk::DescriptorType::eStorageImage, 3},
+        {vk::DescriptorType::eStorageImage, 1},
         {vk::DescriptorType::eStorageImage, 2},
     });
 
@@ -60,7 +60,7 @@ void IQM::GPU::FLIPColorPipeline::prepareSpatialFilters(const VulkanRuntime &run
     //shaders work in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(kernel_size, kernel_size, 16);
 
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 3);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 
     vk::ImageMemoryBarrier imageMemoryBarrier = {
         .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
@@ -69,7 +69,7 @@ void IQM::GPU::FLIPColorPipeline::prepareSpatialFilters(const VulkanRuntime &run
         .newLayout = vk::ImageLayout::eGeneral,
         .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
         .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = this->filterLuma->image,
+        .image = this->csfFilter->image,
         .subresourceRange = vk::ImageSubresourceRange {
             .aspectMask = vk::ImageAspectFlagBits::eColor,
             .baseMipLevel = 0,
@@ -79,22 +79,17 @@ void IQM::GPU::FLIPColorPipeline::prepareSpatialFilters(const VulkanRuntime &run
         }
     };
 
-    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
-    imageMemoryBarrier_2.image = this->filterRedGreen->image;
-    vk::ImageMemoryBarrier imageMemoryBarrier_3 = {imageMemoryBarrier};
-    imageMemoryBarrier_3.image = this->filterBlueYellow->image;
-
     runtime._cmd_buffer->pipelineBarrier(
         vk::PipelineStageFlagBits::eComputeShader,
         vk::PipelineStageFlagBits::eComputeShader,
-        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2, imageMemoryBarrier_3}
+        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier}
     );
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->spatialFilterNormalizePipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->spatialFilterCreateLayout, 0, {this->spatialFilterCreateDescSet}, {});
     runtime._cmd_buffer->pushConstants<float>(this->spatialFilterCreateLayout, vk::ShaderStageFlagBits::eCompute, 0, pixels_per_degree);
 
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 3);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 }
 
 void IQM::GPU::FLIPColorPipeline::prefilter(const VulkanRuntime &runtime, ImageParameters params) {
@@ -111,7 +106,7 @@ void IQM::GPU::FLIPColorPipeline::prepareStorage(const VulkanRuntime &runtime, i
     vk::ImageCreateInfo filterImageInfo = {
         .flags = {},
         .imageType = vk::ImageType::e2D,
-        .format = vk::Format::eR32Sfloat,
+        .format = vk::Format::eR32G32B32A32Sfloat,
         .extent = vk::Extent3D(spatial_kernel_size, spatial_kernel_size, 1),
         .mipLevels = 1,
         .arrayLayers = 1,
@@ -140,16 +135,12 @@ void IQM::GPU::FLIPColorPipeline::prepareStorage(const VulkanRuntime &runtime, i
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
-    this->filterLuma = std::make_shared<VulkanImage>(runtime.createImage(filterImageInfo));
-    this->filterRedGreen = std::make_shared<VulkanImage>(runtime.createImage(filterImageInfo));
-    this->filterBlueYellow = std::make_shared<VulkanImage>(runtime.createImage(filterImageInfo));
+    this->csfFilter = std::make_shared<VulkanImage>(runtime.createImage(filterImageInfo));
     this->inputPrefilter = std::make_shared<VulkanImage>(runtime.createImage(prefilterImageInfo));
     this->refPrefilter = std::make_shared<VulkanImage>(runtime.createImage(prefilterImageInfo));
 
     VulkanRuntime::initImages(runtime._cmd_bufferTransfer, {
-        this->filterLuma,
-        this->filterRedGreen,
-        this->filterBlueYellow,
+        this->csfFilter,
         this->inputPrefilter,
         this->refPrefilter
     });
@@ -157,9 +148,7 @@ void IQM::GPU::FLIPColorPipeline::prepareStorage(const VulkanRuntime &runtime, i
 
 void IQM::GPU::FLIPColorPipeline::setUpDescriptors(const VulkanRuntime &runtime, const std::shared_ptr<VulkanImage> &inputYcc, const std::shared_ptr<VulkanImage> &refYcc) {
     auto imageInfosFilters = VulkanRuntime::createImageInfos({
-        this->filterLuma,
-        this->filterRedGreen,
-        this->filterBlueYellow,
+        this->csfFilter,
     });
 
     auto imageInfosPrefilterInput = VulkanRuntime::createImageInfos({

@@ -34,9 +34,7 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout csfPrefilterDescSetLayout = VK_NULL_HANDLE;
         vk::raii::DescriptorSet csfPrefilterDescSet = VK_NULL_HANDLE;
 
-        std::shared_ptr<VulkanImage> filterLuma;
-        std::shared_ptr<VulkanImage> filterRedGreen;
-        std::shared_ptr<VulkanImage> filterBlueYellow;
+        std::shared_ptr<VulkanImage> csfFilter;
 
         std::shared_ptr<VulkanImage> inputPrefilter;
         std::shared_ptr<VulkanImage> refPrefilter;

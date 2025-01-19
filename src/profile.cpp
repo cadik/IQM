@@ -55,7 +55,7 @@ InputImage load_image(const std::string &filename) {
     };
 }
 
-void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
+void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::SSIM &ssim) {
 #if COMPILE_SSIM
     auto input = load_image(args.inputPath);
     auto reference = load_image(args.refPath);
@@ -63,8 +63,6 @@ void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     if (input.width != reference.width || input.height != reference.height) {
         throw std::runtime_error("Compared images must have the same size");
     }
-
-    IQM::GPU::SSIM ssim(vulkan);
 
     // starts only in debug, needs to init after vulkan
     initRenderDoc();
@@ -135,7 +133,7 @@ void svd(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     }
 }
 
-void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
+void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::FSIM &fsim) {
 #ifdef COMPILE_FSIM
     auto input = load_image(args.inputPath);
     auto reference = load_image(args.refPath);
@@ -143,8 +141,6 @@ void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     if (input.width != reference.width || input.height != reference.height) {
         throw std::runtime_error("Compared images must have the same size");
     }
-
-    IQM::GPU::FSIM fsim(vulkan);
 
     if (args.verbose) {
         std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl;
@@ -170,7 +166,7 @@ void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
 #endif
 }
 
-void flip(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
+void flip(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::FLIP &flip) {
 #ifdef COMPILE_FLIP
     auto input = load_image(args.inputPath);
     auto reference = load_image(args.refPath);
@@ -178,8 +174,6 @@ void flip(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     if (input.width != reference.width || input.height != reference.height) {
         throw std::runtime_error("Compared images must have the same size");
     }
-
-    IQM::GPU::FLIP flip(vulkan);
 
     auto flip_args = IQM::GPU::FLIPArguments{};
     if (args.options.contains("FLIP_WIDTH")) {
@@ -254,13 +248,17 @@ int main(int argc, const char **argv) {
     vulkan.createSwapchain(surface);
     glfwShowWindow(window);
 
+    IQM::GPU::SSIM ssimMethod(vulkan);
+    IQM::GPU::FSIM fsimMethod(vulkan);
+    IQM::GPU::FLIP flipMethod(vulkan);
+
     while (!glfwWindowShouldClose(window)) {
         try {
             auto index = vulkan.acquire();
 
             switch (args.method) {
                 case IQM::Method::SSIM:
-                    ssim(args, vulkan);
+                    ssim(args, vulkan, ssimMethod);
                 break;
                 case IQM::Method::CW_SSIM_CPU:
                 break;
@@ -268,9 +266,10 @@ int main(int argc, const char **argv) {
                     svd(args, vulkan);
                 break;
                 case IQM::Method::FSIM:
-                    fsim(args, vulkan);
+                    fsim(args, vulkan, fsimMethod);
+                break;
                 case IQM::Method::FLIP:
-                    flip(args, vulkan);
+                    flip(args, vulkan, flipMethod);
                 break;
             }
 

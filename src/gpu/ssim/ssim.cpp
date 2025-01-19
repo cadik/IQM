@@ -57,6 +57,8 @@ IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
 }
 
 IQM::GPU::SSIMResult IQM::GPU::SSIM::computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref) {
+    runtime._device.resetFences({this->transferFence});
+
     this->prepareImages(runtime, image, ref);
 
     SSIMResult res;
