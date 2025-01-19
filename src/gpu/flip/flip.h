@@ -6,6 +6,7 @@
 #ifndef FLIP_H
 #define FLIP_H
 
+#include "flip_color_pipeline.h"
 #include "../../input_image.h"
 #include "../img_params.h"
 #include "../../timestamps.h"
@@ -26,6 +27,7 @@ namespace IQM::GPU {
     class FLIP {
     public:
         explicit FLIP(const VulkanRuntime &runtime);
+
         FLIPResult computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref, const FLIPArguments &args);
 
     private:
@@ -33,6 +35,12 @@ namespace IQM::GPU {
         void convertToYCxCz(const VulkanRuntime &runtime);
         void createFeatureFilters(const VulkanRuntime &runtime, float pixels_per_degree, int kernel_size);
         void computeFeatureErrorMap(const VulkanRuntime &runtime);
+
+        void startTransferCommandList(const VulkanRuntime &runtime);
+        void endTransferCommandList(const VulkanRuntime &runtime);
+        void setUpDescriptors(const VulkanRuntime & runtime);
+
+        FLIPColorPipeline colorPipeline;
 
         ImageParameters imageParameters;
 

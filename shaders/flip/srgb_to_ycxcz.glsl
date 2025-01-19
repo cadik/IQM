@@ -14,9 +14,9 @@ layout(set = 0, binding = 1, rgba32f) uniform writeonly image2D output_img[2];
 #define SRGB_LIMIT 0.04045
 
 const mat3 RGB_TO_XYZ = mat3(
-    double(10135552) / 24577794, double(8788810) / 24577794, double(4435075) / 24577794,
-    double(2613072) / 12288897, double(8788810) / 12288897, double(887015) / 12288897,
-    double(1425312) / 73733382, double(8788810) / 73733382, double(70074185) / 73733382
+    float(10135552) / 24577794, float(8788810) / 24577794, float(4435075) / 24577794,
+    float(2613072) / 12288897, float(8788810) / 12288897, float(887015) / 12288897,
+    float(1425312) / 73733382, float(8788810) / 73733382, float(70074185) / 73733382
 );
 
 vec3 srgb_to_linear_rgb(vec3 color) {

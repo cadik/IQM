@@ -5,7 +5,7 @@
 
 #include "flip.h"
 
-IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime) {
+IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
     this->inputConvertKernel = runtime.createShaderModule("../shaders_out/flip/srgb_to_ycxcz.spv");
     this->featureFilterCreateKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter.spv");
     this->featureFilterNormalizeKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter_normalize.spv");
@@ -58,7 +58,7 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime) {
     this->inputConvertLayout = runtime.createPipelineLayout(descLayouts, {});
     this->inputConvertPipeline = runtime.createComputePipeline(this->inputConvertKernel, this->inputConvertLayout);
 
-    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(int));
+    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(float));
     this->featureFilterCreateLayout = runtime.createPipelineLayout(descLayoutsFeatureFilters, ranges);
     this->featureFilterCreatePipeline = runtime.createComputePipeline(this->featureFilterCreateKernel, this->featureFilterCreateLayout);
     this->featureFilterNormalizePipeline = runtime.createComputePipeline(this->featureFilterNormalizeKernel, this->featureFilterCreateLayout);
@@ -76,13 +76,23 @@ IQM::GPU::FLIPResult IQM::GPU::FLIP::computeMetric(const VulkanRuntime &runtime,
 
     auto pixels_per_degree = args.monitor_distance * (args.monitor_resolution_x / args.monitor_width) * (std::numbers::pi / 180.0);
     int gaussian_kernel_size = 2 * static_cast<int>(std::ceil(3 * 0.5 * 0.082 * pixels_per_degree)) + 1;
+    int spatial_kernel_size = 2 * static_cast<int>(std::ceil(3 * std::sqrt(0.04 / (2.0 * std::pow(std::numbers::pi, 2.0))) * pixels_per_degree)) + 1;
 
+    this->startTransferCommandList(runtime);
     this->prepareImageStorage(runtime, image, ref, gaussian_kernel_size);
+    this->colorPipeline.prepareStorage(runtime, spatial_kernel_size, this->imageParameters);
+    this->endTransferCommandList(runtime);
     res.timestamps.mark("Image storage prepared");
+
+    this->setUpDescriptors(runtime);
+    this->colorPipeline.setUpDescriptors(runtime, this->imageYccInput, this->imageYccRef);
+    res.timestamps.mark("Descriptors set up");
 
     this->convertToYCxCz(runtime);
     this->createFeatureFilters(runtime, pixels_per_degree, gaussian_kernel_size);
+    this->colorPipeline.prepareSpatialFilters(runtime, spatial_kernel_size, pixels_per_degree);
     this->computeFeatureErrorMap(runtime);
+    this->colorPipeline.prefilter(runtime, this->imageParameters);
 
     runtime._cmd_buffer->end();
 
@@ -193,12 +203,6 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     this->imageFeatureEdgeFilter = std::make_shared<VulkanImage>(runtime.createImage(featureFilterImageInfo));
     this->imageFeatureError = std::make_shared<VulkanImage>(runtime.createImage(errorImageInfo));
 
-    // copy data to images, correct formats
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_bufferTransfer->begin(beginInfo);
-
     VulkanRuntime::initImages(runtime._cmd_bufferTransfer, {
         this->imageInput,
         this->imageRef,
@@ -219,7 +223,115 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     };
     runtime._cmd_bufferTransfer->copyBufferToImage(this->stgInput, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
     runtime._cmd_bufferTransfer->copyBufferToImage(this->stgRef, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
+}
 
+void IQM::GPU::FLIP::convertToYCxCz(const VulkanRuntime &runtime) {
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_buffer->begin(beginInfo);
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->inputConvertPipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->inputConvertLayout, 0, {this->inputConvertDescSet}, {});
+
+    //shaders work in 16x16 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
+}
+
+void IQM::GPU::FLIP::createFeatureFilters(const VulkanRuntime &runtime, float pixels_per_degree, int kernel_size) {
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureFilterCreatePipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureFilterCreateLayout, 0, {this->featureFilterCreateDescSet}, {});
+    runtime._cmd_buffer->pushConstants<float>(this->featureFilterCreateLayout, vk::ShaderStageFlagBits::eCompute, 0, pixels_per_degree);
+
+    //shaders work in 16x16 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(kernel_size, kernel_size, 16);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
+
+    vk::ImageMemoryBarrier imageMemoryBarrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = this->imageFeatureEdgeFilter->image,
+        .subresourceRange = vk::ImageSubresourceRange {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
+    imageMemoryBarrier_2.image = this->imageFeaturePointFilter->image;
+
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2}
+    );
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureFilterNormalizePipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureFilterCreateLayout, 0, {this->featureFilterCreateDescSet}, {});
+    runtime._cmd_buffer->pushConstants<float>(this->featureFilterCreateLayout, vk::ShaderStageFlagBits::eCompute, 0, pixels_per_degree);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
+}
+
+void IQM::GPU::FLIP::computeFeatureErrorMap(const VulkanRuntime &runtime) {
+    vk::ImageMemoryBarrier imageMemoryBarrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = this->imageFeatureEdgeFilter->image,
+        .subresourceRange = vk::ImageSubresourceRange {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
+    imageMemoryBarrier_2.image = this->imageFeaturePointFilter->image;
+    vk::ImageMemoryBarrier imageMemoryBarrierInput = {imageMemoryBarrier};
+    imageMemoryBarrierInput.image = this->imageYccInput->image;
+    vk::ImageMemoryBarrier imageMemoryBarrierRef = {imageMemoryBarrier};
+    imageMemoryBarrierRef.image = this->imageYccRef->image;
+
+    // wait here, so previous work can be run in parallel
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2, imageMemoryBarrierInput, imageMemoryBarrierRef}
+    );
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureDetectPipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureDetectLayout, 0, {this->featureDetectDescSet}, {});
+
+    //shaders work in 16x16 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
+}
+
+void IQM::GPU::FLIP::startTransferCommandList(const VulkanRuntime &runtime) {
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_bufferTransfer->begin(beginInfo);
+}
+
+void IQM::GPU::FLIP::endTransferCommandList(const VulkanRuntime &runtime) {
     runtime._cmd_bufferTransfer->end();
 
     const std::vector cmdBufsCopy = {
@@ -234,7 +346,9 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     };
 
     runtime._transferQueue->submit(submitInfoCopy, this->transferFence);
+}
 
+void IQM::GPU::FLIP::setUpDescriptors(const VulkanRuntime &runtime) {
     auto imageInfos = VulkanRuntime::createImageInfos({
         this->imageInput,
         this->imageRef,
@@ -291,104 +405,4 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     );
 
     runtime._device.updateDescriptorSets({writeSetConvertInput, writeSetConvertOutput, writeSetFeatureFilter, writeSetDetectInput, writeSetDetectFilters, writeSetDetectOutput}, nullptr);
-}
-
-void IQM::GPU::FLIP::convertToYCxCz(const VulkanRuntime &runtime) {
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
-    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->inputConvertPipeline);
-    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->inputConvertLayout, 0, {this->inputConvertDescSet}, {});
-
-    //shaders work in 16x16 tiles
-    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
-
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
-
-    vk::ImageMemoryBarrier imageMemoryBarrier = {
-        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
-        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-        .oldLayout = vk::ImageLayout::eGeneral,
-        .newLayout = vk::ImageLayout::eGeneral,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = this->imageYccInput->image,
-        .subresourceRange = vk::ImageSubresourceRange {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-
-    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
-    imageMemoryBarrier_2.image = this->imageYccRef->image;
-
-    /*runtime._cmd_buffer->pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2}
-    );*/
-}
-
-void IQM::GPU::FLIP::createFeatureFilters(const VulkanRuntime &runtime, float pixels_per_degree, int kernel_size) {
-    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureFilterCreatePipeline);
-    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureFilterCreateLayout, 0, {this->featureFilterCreateDescSet}, {});
-    runtime._cmd_buffer->pushConstants<float>(this->featureFilterCreateLayout, vk::ShaderStageFlagBits::eCompute, 0, pixels_per_degree);
-
-    //shaders work in 16x16 tiles
-    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(kernel_size, kernel_size, 16);
-
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
-
-    vk::ImageMemoryBarrier imageMemoryBarrier = {
-        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
-        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
-        .oldLayout = vk::ImageLayout::eGeneral,
-        .newLayout = vk::ImageLayout::eGeneral,
-        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-        .image = this->imageFeatureEdgeFilter->image,
-        .subresourceRange = vk::ImageSubresourceRange {
-            .aspectMask = vk::ImageAspectFlagBits::eColor,
-            .baseMipLevel = 0,
-            .levelCount = 1,
-            .baseArrayLayer = 0,
-            .layerCount = 1
-        }
-    };
-
-    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
-    imageMemoryBarrier_2.image = this->imageFeaturePointFilter->image;
-
-    runtime._cmd_buffer->pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2}
-    );
-
-    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureFilterNormalizePipeline);
-    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureFilterCreateLayout, 0, {this->featureFilterCreateDescSet}, {});
-    runtime._cmd_buffer->pushConstants<float>(this->featureFilterCreateLayout, vk::ShaderStageFlagBits::eCompute, 0, pixels_per_degree);
-
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
-
-    runtime._cmd_buffer->pipelineBarrier(
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::PipelineStageFlagBits::eComputeShader,
-        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2}
-    );
-}
-
-void IQM::GPU::FLIP::computeFeatureErrorMap(const VulkanRuntime &runtime) {
-    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->featureDetectPipeline);
-    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->featureDetectLayout, 0, {this->featureDetectDescSet}, {});
-
-    //shaders work in 16x16 tiles
-    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
-
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 }
