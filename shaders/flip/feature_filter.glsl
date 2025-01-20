@@ -6,9 +6,9 @@
 #version 450
 #pragma shader_stage(compute)
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 16, local_size_y = 1) in;
 
-layout(set = 0, binding = 0, r32f) uniform writeonly image2D filter_img[2];
+layout(set = 0, binding = 0, rgba32f) uniform writeonly image2D filter_img;
 
 layout( push_constant ) uniform constants {
     float pixels_per_degree;
@@ -16,12 +16,10 @@ layout( push_constant ) uniform constants {
 
 void main() {
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-    uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-    uint z = gl_WorkGroupID.z;
-    ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(filter_img[z]);
+    ivec2 pos = ivec2(x, 0);
+    ivec2 size = imageSize(filter_img);
 
-    if (x >= imageSize(filter_img[z]).x || y >= imageSize(filter_img[z]).y) {
+    if (x >= size.x) {
         return;
     }
 
@@ -30,18 +28,11 @@ void main() {
     int radius = int(ceil(3.0 * sd));
 
     int xCoord = int(x) - radius;
-    int yCoord = int(y) - radius;
 
-    float g = exp( -(pow(float(xCoord), 2.0) + pow(float(yCoord), 2.0)) / (2.0 * pow(sd, 2.0)));
+    float g = exp( -(pow(float(xCoord), 2.0)) / (2.0 * pow(sd, 2.0)));
 
-    float value;
-    if (z == 0) {
-        // edges
-        value = -xCoord * g;
-    } else {
-        // points
-        value = (pow(float(xCoord), 2.0) / pow(sd, 2.0) - 1) * g;
-    }
+    float edge = -xCoord * g;
+    float point = (pow(float(xCoord), 2.0) / pow(sd, 2.0) - 1) * g;
 
-    imageStore(filter_img[z], pos, vec4(value));
+    imageStore(filter_img, pos, vec4(g, edge, point, 1.0));
 }

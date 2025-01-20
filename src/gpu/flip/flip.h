@@ -58,10 +58,15 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout featureFilterCreateDescSetLayout = VK_NULL_HANDLE;
         vk::raii::DescriptorSet featureFilterCreateDescSet = VK_NULL_HANDLE;
 
+        vk::raii::ShaderModule featureFilterHorizontalKernel = VK_NULL_HANDLE;
+        vk::raii::PipelineLayout featureFilterHorizontalLayout = VK_NULL_HANDLE;
+        vk::raii::Pipeline featureFilterHorizontalPipeline = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout featureFilterHorizontalDescSetLayout = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet featureFilterHorizontalDescSet = VK_NULL_HANDLE;
+
         vk::raii::ShaderModule featureDetectKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout featureDetectLayout = VK_NULL_HANDLE;
         vk::raii::Pipeline featureDetectPipeline = VK_NULL_HANDLE;
-        vk::raii::DescriptorSetLayout featureDetectDescSetLayout = VK_NULL_HANDLE;
         vk::raii::DescriptorSet featureDetectDescSet = VK_NULL_HANDLE;
 
         vk::raii::ShaderModule errorCombineKernel = VK_NULL_HANDLE;
@@ -85,12 +90,13 @@ namespace IQM::GPU {
         std::shared_ptr<VulkanImage> imageRef;
         std::shared_ptr<VulkanImage> imageYccInput;
         std::shared_ptr<VulkanImage> imageYccRef;
+        std::shared_ptr<VulkanImage> imageFilterTempInput;
+        std::shared_ptr<VulkanImage> imageFilterTempRef;
         std::shared_ptr<VulkanImage> imageFeatureError;
 
         std::shared_ptr<VulkanImage> imageColorMap;
 
-        std::shared_ptr<VulkanImage> imageFeaturePointFilter;
-        std::shared_ptr<VulkanImage> imageFeatureEdgeFilter;
+        std::shared_ptr<VulkanImage> imageFeatureFilters;
 
         std::shared_ptr<VulkanImage> imageOut;
     };
