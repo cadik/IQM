@@ -21,14 +21,14 @@ const mat3 RGB_TO_XYZ = mat3(
 
 vec3 srgb_to_linear_rgb(vec3 color) {
     vec3 aboveLimit = vec3(float(color.r > SRGB_LIMIT), float(color.g > SRGB_LIMIT), float(color.b > SRGB_LIMIT));
-    vec3 outColorAbove = color / 12.92;
-    vec3 outColorBelow = pow((color + 0.055) / 1.055, vec3(2.4));
+    vec3 outColorBelow = color / 12.92;
+    vec3 outColorAbove = pow((color + 0.055) / 1.055, vec3(2.4));
 
-    return mix(outColorAbove, outColorBelow, aboveLimit);
+    return mix(outColorBelow, outColorAbove, aboveLimit);
 }
 
 vec3 xyz_to_ycxcz(vec3 color) {
-    vec3 ref = RGB_TO_XYZ * vec3(1.0);
+    vec3 ref = vec3(1.0) * RGB_TO_XYZ;
 
     color /= ref;
 
@@ -51,7 +51,7 @@ void main() {
 
     vec3 inputColor = imageLoad(input_img[z], pos).xyz;
 
-    vec3 transformedColor = xyz_to_ycxcz(RGB_TO_XYZ * srgb_to_linear_rgb(inputColor));
+    vec3 transformedColor = xyz_to_ycxcz(srgb_to_linear_rgb(inputColor) * RGB_TO_XYZ);
 
     imageStore(output_img[z], pos, vec4(transformedColor, 1.0));
 }

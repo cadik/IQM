@@ -9,6 +9,7 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
     this->spatialFilterCreateKernel = runtime.createShaderModule("../shaders_out/flip/spatial_filter_create.spv");
     this->spatialFilterNormalizeKernel = runtime.createShaderModule("../shaders_out/flip/spatial_filter_normalize.spv");
     this->csfPrefilterKernel = runtime.createShaderModule("../shaders_out/flip/spatial_prefilter.spv");
+    this->spatialDetectKernel = runtime.createShaderModule("../shaders_out/flip/spatial_detection.spv");
 
     this->spatialFilterCreateDescSetLayout = runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 1},
@@ -20,6 +21,11 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
         {vk::DescriptorType::eStorageImage, 2},
     });
 
+    this->spatialDetectDescSetLayout = runtime.createDescLayout({
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageImage, 1},
+    });
+
     const std::vector descLayoutCreate = {
         *this->spatialFilterCreateDescSetLayout,
     };
@@ -28,9 +34,14 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
         *this->csfPrefilterDescSetLayout,
     };
 
+    const std::vector descLayoutDetect = {
+        *this->spatialDetectDescSetLayout,
+    };
+
     const std::vector allDescLayouts = {
         *this->spatialFilterCreateDescSetLayout,
         *this->csfPrefilterDescSetLayout,
+        *this->spatialDetectDescSetLayout,
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
@@ -42,6 +53,7 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
     auto sets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
     this->spatialFilterCreateDescSet = std::move(sets[0]);
     this->csfPrefilterDescSet = std::move(sets[1]);
+    this->spatialDetectDescSet = std::move(sets[2]);
 
     const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(float));
     this->spatialFilterCreateLayout = runtime.createPipelineLayout(descLayoutCreate, ranges);
@@ -50,6 +62,9 @@ IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
 
     this->csfPrefilterLayout = runtime.createPipelineLayout(descLayoutPrefilter, {});
     this->csfPrefilterPipeline = runtime.createComputePipeline(this->csfPrefilterKernel, this->csfPrefilterLayout);
+
+    this->spatialDetectLayout = runtime.createPipelineLayout(descLayoutDetect, {});
+    this->spatialDetectPipeline = runtime.createComputePipeline(this->spatialDetectKernel, this->spatialDetectLayout);
 }
 
 void IQM::GPU::FLIPColorPipeline::prepareSpatialFilters(const VulkanRuntime &runtime, int kernel_size, float pixels_per_degree) {
@@ -102,6 +117,42 @@ void IQM::GPU::FLIPColorPipeline::prefilter(const VulkanRuntime &runtime, ImageP
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
 }
 
+void IQM::GPU::FLIPColorPipeline::computeErrorMap(const VulkanRuntime &runtime, ImageParameters params) {
+    vk::ImageMemoryBarrier imageMemoryBarrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = this->inputPrefilter->image,
+        .subresourceRange = vk::ImageSubresourceRange {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    vk::ImageMemoryBarrier imageMemoryBarrier_2 = {imageMemoryBarrier};
+    imageMemoryBarrier_2.image = this->refPrefilter->image;
+
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier, imageMemoryBarrier_2}
+    );
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->spatialDetectPipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->spatialDetectLayout, 0, {this->spatialDetectDescSet}, {});
+
+    //shaders work in 16x16 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(params.width, params.height, 16);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
+}
+
 void IQM::GPU::FLIPColorPipeline::prepareStorage(const VulkanRuntime &runtime, int spatial_kernel_size, ImageParameters params) {
     vk::ImageCreateInfo filterImageInfo = {
         .flags = {},
@@ -135,14 +186,19 @@ void IQM::GPU::FLIPColorPipeline::prepareStorage(const VulkanRuntime &runtime, i
         .initialLayout = vk::ImageLayout::eUndefined,
     };
 
+    vk::ImageCreateInfo colorErrorImageInfo = {prefilterImageInfo};
+    colorErrorImageInfo.format = vk::Format::eR32Sfloat;
+
     this->csfFilter = std::make_shared<VulkanImage>(runtime.createImage(filterImageInfo));
     this->inputPrefilter = std::make_shared<VulkanImage>(runtime.createImage(prefilterImageInfo));
     this->refPrefilter = std::make_shared<VulkanImage>(runtime.createImage(prefilterImageInfo));
+    this->imageColorError = std::make_shared<VulkanImage>(runtime.createImage(colorErrorImageInfo));
 
     VulkanRuntime::initImages(runtime._cmd_bufferTransfer, {
         this->csfFilter,
         this->inputPrefilter,
-        this->refPrefilter
+        this->refPrefilter,
+        this->imageColorError,
     });
 }
 
@@ -159,6 +215,10 @@ void IQM::GPU::FLIPColorPipeline::setUpDescriptors(const VulkanRuntime &runtime,
     auto imageInfosPrefilterOutput = VulkanRuntime::createImageInfos({
         this->inputPrefilter,
         this->refPrefilter,
+    });
+
+    auto imageInfosOutput = VulkanRuntime::createImageInfos({
+        this->imageColorError,
     });
 
     auto writeSetCreate = VulkanRuntime::createWriteSet(
@@ -185,5 +245,17 @@ void IQM::GPU::FLIPColorPipeline::setUpDescriptors(const VulkanRuntime &runtime,
         imageInfosPrefilterOutput
     );
 
-    runtime._device.updateDescriptorSets({writeSetCreate, writeSetPrefilterInput, writeSetPrefilterFilters, writeSetPrefilterOutput}, nullptr);
+    auto writeSetDetectInput = VulkanRuntime::createWriteSet(
+        this->spatialDetectDescSet,
+        0,
+        imageInfosPrefilterOutput
+    );
+
+    auto writeSetDetectOutput = VulkanRuntime::createWriteSet(
+        this->spatialDetectDescSet,
+        1,
+        imageInfosOutput
+    );
+
+    runtime._device.updateDescriptorSets({writeSetCreate, writeSetPrefilterInput, writeSetPrefilterFilters, writeSetPrefilterOutput, writeSetDetectInput, writeSetDetectOutput}, nullptr);
 }

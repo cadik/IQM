@@ -552,7 +552,7 @@ void IQM::GPU::VulkanRuntime::initDescriptors() {
 
     vk::DescriptorPoolCreateInfo dsCreateInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 32,
+        .maxSets = 64,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data()
     };

@@ -59,10 +59,28 @@ void main() {
     float cx = (opponent.y) / 500.0;
     float cz = (opponent.z) / 200.0;
 
-    vec3 ref = RGB_TO_XYZ * vec3(1.0);
+    vec3 ref = vec3(1.0) * RGB_TO_XYZ;
     vec3 xyz = vec3(yy + cx, yy, yy - cz) * ref;
 
-    vec3 linRgb = clamp(XYZ_TO_RGB * xyz, vec3(0.0), vec3(1.0));
+    vec3 linRgb = clamp(xyz * XYZ_TO_RGB, vec3(0.0), vec3(1.0));
 
-    imageStore(output_img[z], pos, vec4(linRgb, 0.0));
+    xyz = linRgb * RGB_TO_XYZ;
+    xyz /= ref;
+
+    // convert to L*a*b
+    float delta = 6.0 / 29.0;
+    float limit = 0.008856;
+
+    vec3 aboveLimit = vec3(float(xyz.x > limit), float(xyz.y > limit), float(xyz.z > limit));
+    vec3 above = vec3(pow(xyz.x, 1.0 / 3.0), pow(xyz.y, 1.0 / 3.0), pow(xyz.z, 1.0 / 3.0));
+    vec3 below = xyz / (3.0 * delta * delta) + 4.0 / 29.0;
+
+    vec3 color = mix(below, above, aboveLimit);
+
+    vec3 lab = vec3(116.0 * color.y - 16.0, 500.0 * (color.x - color.y), 200.0 * (color.y - color.z));
+    // Hunt effect adjustment
+    lab.y *= 0.01 * lab.x;
+    lab.z *= 0.01 * lab.x;
+
+    imageStore(output_img[z], pos, vec4(lab, 0.0));
 }

@@ -27,7 +27,6 @@ namespace IQM::GPU {
     class FLIP {
     public:
         explicit FLIP(const VulkanRuntime &runtime);
-
         FLIPResult computeMetric(const VulkanRuntime &runtime, const InputImage &image, const InputImage &ref, const FLIPArguments &args);
 
     private:
@@ -35,6 +34,7 @@ namespace IQM::GPU {
         void convertToYCxCz(const VulkanRuntime &runtime);
         void createFeatureFilters(const VulkanRuntime &runtime, float pixels_per_degree, int kernel_size);
         void computeFeatureErrorMap(const VulkanRuntime &runtime);
+        void computeFinalErrorMap(const VulkanRuntime & runtime);
 
         void startTransferCommandList(const VulkanRuntime &runtime);
         void endTransferCommandList(const VulkanRuntime &runtime);
@@ -64,6 +64,12 @@ namespace IQM::GPU {
         vk::raii::DescriptorSetLayout featureDetectDescSetLayout = VK_NULL_HANDLE;
         vk::raii::DescriptorSet featureDetectDescSet = VK_NULL_HANDLE;
 
+        vk::raii::ShaderModule errorCombineKernel = VK_NULL_HANDLE;
+        vk::raii::PipelineLayout errorCombineLayout = VK_NULL_HANDLE;
+        vk::raii::Pipeline errorCombinePipeline = VK_NULL_HANDLE;
+        vk::raii::DescriptorSetLayout errorCombineDescSetLayout = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet errorCombineDescSet = VK_NULL_HANDLE;
+
         vk::raii::Semaphore uploadDone = VK_NULL_HANDLE;
         vk::raii::Semaphore computeDone = VK_NULL_HANDLE;
         vk::raii::Fence transferFence = VK_NULL_HANDLE;
@@ -72,6 +78,8 @@ namespace IQM::GPU {
         vk::raii::DeviceMemory stgInputMemory = VK_NULL_HANDLE;
         vk::raii::Buffer stgRef = VK_NULL_HANDLE;
         vk::raii::DeviceMemory stgRefMemory = VK_NULL_HANDLE;
+        vk::raii::Buffer stgColorMap = VK_NULL_HANDLE;
+        vk::raii::DeviceMemory stgColorMapMemory = VK_NULL_HANDLE;
 
         std::shared_ptr<VulkanImage> imageInput;
         std::shared_ptr<VulkanImage> imageRef;
@@ -79,8 +87,12 @@ namespace IQM::GPU {
         std::shared_ptr<VulkanImage> imageYccRef;
         std::shared_ptr<VulkanImage> imageFeatureError;
 
+        std::shared_ptr<VulkanImage> imageColorMap;
+
         std::shared_ptr<VulkanImage> imageFeaturePointFilter;
         std::shared_ptr<VulkanImage> imageFeatureEdgeFilter;
+
+        std::shared_ptr<VulkanImage> imageOut;
     };
 }
 

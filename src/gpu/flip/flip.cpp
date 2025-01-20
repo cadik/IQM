@@ -4,12 +4,14 @@
  */
 
 #include "flip.h"
+#include "viridis.h"
 
 IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
     this->inputConvertKernel = runtime.createShaderModule("../shaders_out/flip/srgb_to_ycxcz.spv");
     this->featureFilterCreateKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter.spv");
     this->featureFilterNormalizeKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter_normalize.spv");
     this->featureDetectKernel = runtime.createShaderModule("../shaders_out/flip/feature_detection.spv");
+    this->errorCombineKernel = runtime.createShaderModule("../shaders_out/flip/combine_error_maps.spv");
 
     this->inputConvertDescSetLayout = runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 2},
@@ -26,6 +28,12 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
         {vk::DescriptorType::eStorageImage, 1},
     });
 
+    this->errorCombineDescSetLayout = runtime.createDescLayout({
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageImage, 1},
+        {vk::DescriptorType::eStorageImage, 1},
+    });
+
     const std::vector descLayouts = {
         *this->inputConvertDescSetLayout,
     };
@@ -38,10 +46,15 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
         *this->featureDetectDescSetLayout,
     };
 
+    const std::vector descLayoutErrorCombine = {
+        *this->errorCombineDescSetLayout,
+    };
+
     const std::vector allDescLayouts = {
         *this->inputConvertDescSetLayout,
         *this->featureFilterCreateDescSetLayout,
         *this->featureDetectDescSetLayout,
+        *this->errorCombineDescSetLayout,
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
@@ -54,6 +67,7 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
     this->inputConvertDescSet = std::move(sets[0]);
     this->featureFilterCreateDescSet = std::move(sets[1]);
     this->featureDetectDescSet = std::move(sets[2]);
+    this->errorCombineDescSet = std::move(sets[3]);
 
     this->inputConvertLayout = runtime.createPipelineLayout(descLayouts, {});
     this->inputConvertPipeline = runtime.createComputePipeline(this->inputConvertKernel, this->inputConvertLayout);
@@ -65,6 +79,9 @@ IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
 
     this->featureDetectLayout = runtime.createPipelineLayout(descLayoutFilterDetect, {});
     this->featureDetectPipeline = runtime.createComputePipeline(this->featureDetectKernel, this->featureDetectLayout);
+
+    this->errorCombineLayout = runtime.createPipelineLayout(descLayoutErrorCombine, {});
+    this->errorCombinePipeline = runtime.createComputePipeline(this->errorCombineKernel, this->errorCombineLayout);
 
     this->uploadDone = runtime._device.createSemaphore(vk::SemaphoreCreateInfo{});
     this->computeDone = runtime._device.createSemaphore(vk::SemaphoreCreateInfo{});
@@ -94,6 +111,8 @@ IQM::GPU::FLIPResult IQM::GPU::FLIP::computeMetric(const VulkanRuntime &runtime,
     this->colorPipeline.prepareSpatialFilters(runtime, spatial_kernel_size, pixels_per_degree);
     this->computeFeatureErrorMap(runtime);
     this->colorPipeline.prefilter(runtime, this->imageParameters);
+    this->colorPipeline.computeErrorMap(runtime, this->imageParameters);
+    this->computeFinalErrorMap(runtime);
 
     runtime._cmd_buffer->end();
 
@@ -137,11 +156,19 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
         vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
     );
 
+    const auto colorMapSize = 256 * 4 * sizeof(float);
+    auto [stgColorMapBuf, stgColorMapMem] = runtime.createBuffer(
+        colorMapSize,
+        vk::BufferUsageFlagBits::eTransferSrc,
+        vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent
+    );
+
     this->imageParameters.height = image.height;
     this->imageParameters.width = image.width;
 
     stgBuf.bindMemory(stgMem, 0);
     stgRefBuf.bindMemory(stgRefMem, 0);
+    stgColorMapBuf.bindMemory(stgColorMapMem, 0);
 
     void * inBufData = stgMem.mapMemory(0, size, {});
     memcpy(inBufData, image.data.data(), size);
@@ -151,10 +178,16 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     memcpy(inBufData, ref.data.data(), size);
     stgRefMem.unmapMemory();
 
+    inBufData = stgColorMapMem.mapMemory(0, colorMapSize, {});
+    memcpy(inBufData, viridis, colorMapSize);
+    stgColorMapMem.unmapMemory();
+
     this->stgInput = std::move(stgBuf);
     this->stgInputMemory = std::move(stgMem);
     this->stgRef = std::move(stgRefBuf);
     this->stgRefMemory = std::move(stgRefMem);
+    this->stgColorMap = std::move(stgColorMapBuf);
+    this->stgColorMapMemory = std::move(stgColorMapMem);
 
     vk::ImageCreateInfo srcImageInfo = {
         .flags = {},
@@ -178,7 +211,11 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
 
     vk::ImageCreateInfo errorImageInfo {srcImageInfo};
     errorImageInfo.format = vk::Format::eR32Sfloat;
-    errorImageInfo.usage = vk::ImageUsageFlagBits::eStorage;
+    errorImageInfo.usage = vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc;
+
+    vk::ImageCreateInfo colorMapImageInfo {srcImageInfo};
+    colorMapImageInfo.format = vk::Format::eR32G32B32A32Sfloat;
+    colorMapImageInfo.extent = vk::Extent3D(256, 1, 1);
 
     vk::ImageCreateInfo featureFilterImageInfo = {
         .flags = {},
@@ -200,9 +237,11 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     this->imageRef = std::make_shared<VulkanImage>(runtime.createImage(srcImageInfo));
     this->imageYccInput = std::make_shared<VulkanImage>(runtime.createImage(yccImageInfo));
     this->imageYccRef = std::make_shared<VulkanImage>(runtime.createImage(yccImageInfo));
+    this->imageOut = std::make_shared<VulkanImage>(runtime.createImage(yccImageInfo));
     this->imageFeaturePointFilter = std::make_shared<VulkanImage>(runtime.createImage(featureFilterImageInfo));
     this->imageFeatureEdgeFilter = std::make_shared<VulkanImage>(runtime.createImage(featureFilterImageInfo));
     this->imageFeatureError = std::make_shared<VulkanImage>(runtime.createImage(errorImageInfo));
+    this->imageColorMap = std::make_shared<VulkanImage>(runtime.createImage(colorMapImageInfo));
 
     VulkanRuntime::initImages(runtime._cmd_bufferTransfer, {
         this->imageInput,
@@ -212,6 +251,8 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
         this->imageFeaturePointFilter,
         this->imageFeatureEdgeFilter,
         this->imageFeatureError,
+        this->imageOut,
+        this->imageColorMap,
     });
 
     vk::BufferImageCopy copyRegion{
@@ -224,6 +265,16 @@ void IQM::GPU::FLIP::prepareImageStorage(const VulkanRuntime &runtime, const Inp
     };
     runtime._cmd_bufferTransfer->copyBufferToImage(this->stgInput, this->imageInput->image,  vk::ImageLayout::eGeneral, copyRegion);
     runtime._cmd_bufferTransfer->copyBufferToImage(this->stgRef, this->imageRef->image,  vk::ImageLayout::eGeneral, copyRegion);
+
+    vk::BufferImageCopy copyColorMapRegion{
+        .bufferOffset = 0,
+        .bufferRowLength = 256,
+        .bufferImageHeight = 1,
+        .imageSubresource = vk::ImageSubresourceLayers{.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+        .imageOffset = vk::Offset3D{0, 0, 0},
+        .imageExtent = vk::Extent3D{256, 1, 1}
+    };
+    runtime._cmd_bufferTransfer->copyBufferToImage(this->stgColorMap, this->imageColorMap->image,  vk::ImageLayout::eGeneral, copyColorMapRegion);
 }
 
 void IQM::GPU::FLIP::convertToYCxCz(const VulkanRuntime &runtime) {
@@ -325,6 +376,40 @@ void IQM::GPU::FLIP::computeFeatureErrorMap(const VulkanRuntime &runtime) {
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
 }
 
+void IQM::GPU::FLIP::computeFinalErrorMap(const VulkanRuntime &runtime) {
+    vk::ImageMemoryBarrier imageMemoryBarrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
+        .oldLayout = vk::ImageLayout::eGeneral,
+        .newLayout = vk::ImageLayout::eGeneral,
+        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+        .image = this->colorPipeline.imageColorError->image,
+        .subresourceRange = vk::ImageSubresourceRange {
+            .aspectMask = vk::ImageAspectFlagBits::eColor,
+            .baseMipLevel = 0,
+            .levelCount = 1,
+            .baseArrayLayer = 0,
+            .layerCount = 1
+        }
+    };
+
+    // wait here, so previous work can be run in parallel
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup, {}, {}, {imageMemoryBarrier}
+    );
+
+    runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->errorCombinePipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->errorCombineLayout, 0, {this->errorCombineDescSet}, {});
+
+    //shaders work in 16x16 tiles
+    auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(this->imageParameters.width, this->imageParameters.height, 16);
+
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
+}
+
 void IQM::GPU::FLIP::startTransferCommandList(const VulkanRuntime &runtime) {
     const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
@@ -361,7 +446,7 @@ void IQM::GPU::FLIP::setUpDescriptors(const VulkanRuntime &runtime) {
         imageInfos
     );
 
-    auto outImageInfos = VulkanRuntime::createImageInfos({
+    auto yccOutImageInfos = VulkanRuntime::createImageInfos({
         this->imageYccInput,
         this->imageYccRef,
     });
@@ -369,7 +454,7 @@ void IQM::GPU::FLIP::setUpDescriptors(const VulkanRuntime &runtime) {
     auto writeSetConvertOutput = VulkanRuntime::createWriteSet(
         this->inputConvertDescSet,
         1,
-        outImageInfos
+        yccOutImageInfos
     );
 
     auto featureFilterImageInfos = VulkanRuntime::createImageInfos({
@@ -390,7 +475,7 @@ void IQM::GPU::FLIP::setUpDescriptors(const VulkanRuntime &runtime) {
     auto writeSetDetectInput = VulkanRuntime::createWriteSet(
         this->featureDetectDescSet,
         0,
-        outImageInfos
+        yccOutImageInfos
     );
 
     auto writeSetDetectFilters = VulkanRuntime::createWriteSet(
@@ -405,5 +490,36 @@ void IQM::GPU::FLIP::setUpDescriptors(const VulkanRuntime &runtime) {
         outFeatureImageInfos
     );
 
-    runtime._device.updateDescriptorSets({writeSetConvertInput, writeSetConvertOutput, writeSetFeatureFilter, writeSetDetectInput, writeSetDetectFilters, writeSetDetectOutput}, nullptr);
+    auto colorMapImageInfos = VulkanRuntime::createImageInfos({
+        this->imageColorMap,
+    });
+
+    auto outImageInfos = VulkanRuntime::createImageInfos({
+        this->imageOut,
+    });
+
+    auto errorImageInfos = VulkanRuntime::createImageInfos({
+        this->imageFeatureError,
+        this->colorPipeline.imageColorError,
+    });
+
+    auto writeSetFinalIn = VulkanRuntime::createWriteSet(
+        this->errorCombineDescSet,
+        0,
+        errorImageInfos
+    );
+
+    auto writeSetFinalColorMap = VulkanRuntime::createWriteSet(
+        this->errorCombineDescSet,
+        1,
+        colorMapImageInfos
+    );
+
+    auto writeSetFinalOut = VulkanRuntime::createWriteSet(
+        this->errorCombineDescSet,
+        2,
+        outImageInfos
+    );
+
+    runtime._device.updateDescriptorSets({writeSetConvertInput, writeSetConvertOutput, writeSetFeatureFilter, writeSetDetectInput, writeSetDetectFilters, writeSetDetectOutput, writeSetFinalIn, writeSetFinalColorMap, writeSetFinalOut}, nullptr);
 }
