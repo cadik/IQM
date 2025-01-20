@@ -14,7 +14,7 @@ namespace IQM::GPU {
     public:
         explicit FLIPColorPipeline(const VulkanRuntime &runtime);
         void prepareSpatialFilters(const VulkanRuntime &runtime, int kernel_size, float pixels_per_degree);
-        void prefilter(const VulkanRuntime &runtime, ImageParameters params);
+        void prefilter(const VulkanRuntime &runtime, ImageParameters params, float pixels_per_degree);
         void computeErrorMap(const VulkanRuntime &runtime, ImageParameters params);
 
         void prepareStorage(const VulkanRuntime &runtime, int spatial_kernel_size, ImageParameters params);
@@ -22,19 +22,14 @@ namespace IQM::GPU {
 
         std::shared_ptr<VulkanImage> imageColorError;
     private:
-        vk::raii::ShaderModule spatialFilterCreateKernel = VK_NULL_HANDLE;
-        vk::raii::ShaderModule spatialFilterNormalizeKernel = VK_NULL_HANDLE;
-        vk::raii::PipelineLayout spatialFilterCreateLayout = VK_NULL_HANDLE;
-        vk::raii::Pipeline spatialFilterCreatePipeline = VK_NULL_HANDLE;
-        vk::raii::Pipeline spatialFilterNormalizePipeline = VK_NULL_HANDLE;
-        vk::raii::DescriptorSetLayout spatialFilterCreateDescSetLayout = VK_NULL_HANDLE;
-        vk::raii::DescriptorSet spatialFilterCreateDescSet = VK_NULL_HANDLE;
-
         vk::raii::ShaderModule csfPrefilterKernel = VK_NULL_HANDLE;
+        vk::raii::ShaderModule csfPrefilterHorizontalKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout csfPrefilterLayout = VK_NULL_HANDLE;
         vk::raii::Pipeline csfPrefilterPipeline = VK_NULL_HANDLE;
+        vk::raii::Pipeline csfPrefilterHorizontalPipeline = VK_NULL_HANDLE;
         vk::raii::DescriptorSetLayout csfPrefilterDescSetLayout = VK_NULL_HANDLE;
         vk::raii::DescriptorSet csfPrefilterDescSet = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet csfPrefilterHorizontalDescSet = VK_NULL_HANDLE;
 
         vk::raii::ShaderModule spatialDetectKernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout spatialDetectLayout = VK_NULL_HANDLE;
@@ -43,6 +38,9 @@ namespace IQM::GPU {
         vk::raii::DescriptorSet spatialDetectDescSet = VK_NULL_HANDLE;
 
         std::shared_ptr<VulkanImage> csfFilter;
+
+        std::shared_ptr<VulkanImage> inputPrefilterTemp;
+        std::shared_ptr<VulkanImage> refPrefilterTemp;
 
         std::shared_ptr<VulkanImage> inputPrefilter;
         std::shared_ptr<VulkanImage> refPrefilter;

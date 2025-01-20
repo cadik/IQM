@@ -108,9 +108,8 @@ IQM::GPU::FLIPResult IQM::GPU::FLIP::computeMetric(const VulkanRuntime &runtime,
 
     this->convertToYCxCz(runtime);
     this->createFeatureFilters(runtime, pixels_per_degree, gaussian_kernel_size);
-    this->colorPipeline.prepareSpatialFilters(runtime, spatial_kernel_size, pixels_per_degree);
     this->computeFeatureErrorMap(runtime);
-    this->colorPipeline.prefilter(runtime, this->imageParameters);
+    this->colorPipeline.prefilter(runtime, this->imageParameters, pixels_per_degree);
     this->colorPipeline.computeErrorMap(runtime, this->imageParameters);
     this->computeFinalErrorMap(runtime);
 

@@ -6,11 +6,16 @@
 #version 450
 #pragma shader_stage(compute)
 
+#define PI 3.141592653589
+
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(set = 0, binding = 0, rgba32f) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, rgba32f) uniform readonly image2D filter_img;
-layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D output_img[2];
+layout(set = 0, binding = 1, rgba32f) uniform writeonly image2D output_img[2];
+
+layout( push_constant ) uniform constants {
+    float pixels_per_degree;
+} push_consts;
 
 const mat3 XYZ_TO_RGB = mat3(
     3.241003275, -1.537398934, -0.498615861,
@@ -24,6 +29,14 @@ const mat3 RGB_TO_XYZ = mat3(
     float(1425312) / 73733382, float(8788810) / 73733382, float(70074185) / 73733382
 );
 
+const vec4 lumaParams = vec4(1.0, 0.0047, 0, 0.00001);
+const vec4 rgParams = vec4(1.0, 0.0053, 0, 0.00001);
+const vec4 byParams = vec4(34.1, 0.04, 13.5, 0.025);
+
+float getGaussValue(float d, vec4 par) {
+    return par.x * sqrt(PI / par.y) * exp(-pow(PI, 2.0) * d / par.y) + par.z * sqrt(PI / par.w) * exp(-pow(PI, 2.0) * d / par.w);
+}
+
 void main() {
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
@@ -35,25 +48,28 @@ void main() {
         return;
     }
 
-    int halfSize = imageSize(filter_img).x / 2;
+    int radius = int(ceil(3.0 * sqrt(0.04 / (2.0 * PI * PI)) * push_consts.pixels_per_degree));
+    int halfSize = radius;
+    float deltaX = 1.0 / push_consts.pixels_per_degree;
 
     vec3 opponent = vec3(0.0);
+    vec3 opponentTotal = vec3(0.0);
 
-    for (int j = -halfSize; j <= halfSize; j++) {
-        uint actualX = uint(clamp(int(x) - j, 0, size.x - 1));
-        uint filterX = j + halfSize;
+    for (int k = -halfSize; k <= halfSize; k++) {
+        uint actualY = uint(clamp(int(y) - k, 0, size.y - 1));
 
-        for (int k = -halfSize; k <= halfSize; k++) {
-            uint actualY = uint(clamp(int(y) - k, 0, size.y - 1));
-            uint filterY = k + halfSize;
+        vec3 ycc = imageLoad(input_img[z], ivec2(x, actualY)).xyz;
 
-            vec3 ycc = imageLoad(input_img[z], ivec2(actualX, actualY)).xyz;
+        float yy = float(k) * deltaX;
+        float d = yy * yy;
 
-            vec3 filter_val = imageLoad(filter_img, ivec2(filterX, filterY)).xyz;
+        vec3 filter_val = vec3(getGaussValue(d, lumaParams), getGaussValue(d, rgParams), getGaussValue(d, byParams));
 
-            opponent += ycc * filter_val;
-        }
+        opponent += ycc * filter_val;
+        opponentTotal += filter_val;
     }
+
+    opponent /= opponentTotal;
 
     float yy = (opponent.x + 16.0) / 116.0;
     float cx = (opponent.y) / 500.0;
