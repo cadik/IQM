@@ -1,6 +1,6 @@
 /*
-* Image Quality Metrics
- * Petr Volf - 2024
+ * Image Quality Metrics
+ * Petr Volf - 2025
  */
 
 #ifndef IQM_METHODS_H
@@ -15,6 +15,7 @@ namespace IQM {
         CW_SSIM_CPU = 2,
         SVD = 3,
         FSIM = 4,
+        FLIP = 5,
     };
 
     std::string method_name(const Method &method);

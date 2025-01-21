@@ -11,39 +11,14 @@ IQM::GPU::FSIMFinalMultiply::FSIMFinalMultiply(const VulkanRuntime &runtime) {
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 2,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 3,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 3,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageImage, 2},
+        {vk::DescriptorType::eStorageImage, 3},
     }));
 
     this->sumDescSetLayout = std::move(runtime.createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
+        {vk::DescriptorType::eStorageBuffer, 1},
     }));
 
     const std::vector layouts = {
@@ -151,49 +126,29 @@ void IQM::GPU::FSIMFinalMultiply::prepareImageStorage(
     auto pcImageInfos = VulkanRuntime::createImageInfos(pcImgs);
     auto outImageInfos = VulkanRuntime::createImageInfos(this->images);
 
-    const vk::WriteDescriptorSet writeSetIn{
-        .dstSet = this->descSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = inImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetIn = VulkanRuntime::createWriteSet(
+        this->descSet,
+        0,
+        inImageInfos
+    );
 
-    const vk::WriteDescriptorSet writeSetGrad{
-        .dstSet = this->descSet,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = gradImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetGrad = VulkanRuntime::createWriteSet(
+        this->descSet,
+        1,
+        gradImageInfos
+    );
 
-    const vk::WriteDescriptorSet writeSetPc{
-        .dstSet = this->descSet,
-        .dstBinding = 2,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = pcImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetPc = VulkanRuntime::createWriteSet(
+        this->descSet,
+        2,
+        pcImageInfos
+    );
 
-    const vk::WriteDescriptorSet writeSetOut{
-        .dstSet = this->descSet,
-        .dstBinding = 3,
-        .dstArrayElement = 0,
-        .descriptorCount = 3,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = outImageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetOut = VulkanRuntime::createWriteSet(
+        this->descSet,
+        3,
+        outImageInfos
+    );
 
     auto [sumBuf, sumMem] = runtime.createBuffer(
         width * height * sizeof(float),
@@ -204,22 +159,19 @@ void IQM::GPU::FSIMFinalMultiply::prepareImageStorage(
     this->sumBuffer = std::move(sumBuf);
     this->sumMemory = std::move(sumMem);
 
-    vk::DescriptorBufferInfo bufInfo {
-        .buffer = this->sumBuffer,
-        .offset = 0,
-        .range = width * height * sizeof(float),
+    auto bufInfo = std::vector{
+        vk::DescriptorBufferInfo {
+            .buffer = this->sumBuffer,
+            .offset = 0,
+            .range = width * height * sizeof(float),
+        }
     };
 
-    const vk::WriteDescriptorSet writeSetSum{
-        .dstSet = this->sumDescSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = &bufInfo,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSetSum = VulkanRuntime::createWriteSet(
+        this->sumDescSet,
+        0,
+        bufInfo
+    );
 
     const std::vector writes = {
         writeSetIn, writeSetGrad, writeSetPc, writeSetOut, writeSetSum

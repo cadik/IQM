@@ -76,17 +76,11 @@ void IQM::GPU::FSIMAngularFilter::prepareImageStorage(const VulkanRuntime &runti
         this->imageAngularFilters[i] = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
 
         auto imageInfos = VulkanRuntime::createImageInfos({this->imageAngularFilters[i]});
-
-        const vk::WriteDescriptorSet writeSet{
-            .dstSet = this->descSets[i],
-            .dstBinding = 0,
-            .dstArrayElement = 0,
-            .descriptorCount = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .pImageInfo = imageInfos.data(),
-            .pBufferInfo = nullptr,
-            .pTexelBufferView = nullptr,
-        };
+        const auto writeSet = VulkanRuntime::createWriteSet(
+            this->descSets[i],
+            0,
+            imageInfos
+        );
 
         const std::vector writes = {
             writeSet,

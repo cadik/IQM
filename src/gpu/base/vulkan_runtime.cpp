@@ -521,78 +521,28 @@ void IQM::GPU::VulkanRuntime::initQueues() {
 
 void IQM::GPU::VulkanRuntime::initDescriptors() {
     this->_descLayoutThreeImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 2,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        }
+        {vk::DescriptorType::eStorageImage, 1},
+        {vk::DescriptorType::eStorageImage, 1},
+        {vk::DescriptorType::eStorageImage, 1},
     }));
 
     this->_descLayoutTwoImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageImage, 1},
+        {vk::DescriptorType::eStorageImage, 1},
     }));
 
     this->_descLayoutOneImage = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageImage, 1},
     }));
 
     this->_descLayoutBuffer = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageBuffer, 1},
+        {vk::DescriptorType::eStorageBuffer, 1},
     }));
 
     this->_descLayoutImageBuffer = std::move(this->createDescLayout({
-        vk::DescriptorSetLayoutBinding{
-            .binding = 0,
-            .descriptorType = vk::DescriptorType::eStorageImage,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
-        vk::DescriptorSetLayoutBinding{
-            .binding = 1,
-            .descriptorType = vk::DescriptorType::eStorageBuffer,
-            .descriptorCount = 1,
-            .stageFlags = vk::ShaderStageFlagBits::eCompute,
-        },
+        {vk::DescriptorType::eStorageImage, 1},
+        {vk::DescriptorType::eStorageBuffer, 1},
     }));
 
     std::vector poolSizes = {
@@ -602,7 +552,7 @@ void IQM::GPU::VulkanRuntime::initDescriptors() {
 
     vk::DescriptorPoolCreateInfo dsCreateInfo{
         .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-        .maxSets = 32,
+        .maxSets = 64,
         .poolSizeCount = static_cast<uint32_t>(poolSizes.size()),
         .pPoolSizes = poolSizes.data()
     };
@@ -625,6 +575,28 @@ std::vector<const char *> IQM::GPU::VulkanRuntime::getLayers() {
     }
 
     return {};
+}
+
+vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<std::pair<vk::DescriptorType, uint32_t>> &stub) const {
+    auto bindings = std::vector<vk::DescriptorSetLayoutBinding>(stub.size());
+
+    for (unsigned i = 0; i < stub.size(); i++) {
+        const auto &[descType, count] = stub[i];
+        bindings[i].descriptorCount = count;
+        bindings[i].descriptorType = descType;
+
+        // assume only compute stages everywhere
+        bindings[i].stageFlags = vk::ShaderStageFlagBits::eCompute;
+        // recompute indices sequentially
+        bindings[i].binding = i;
+    }
+
+    auto info = vk::DescriptorSetLayoutCreateInfo {
+        .bindingCount = static_cast<uint32_t>(bindings.size()),
+        .pBindings = bindings.data()
+    };
+
+    return vk::raii::DescriptorSetLayout {this->_device, info};
 }
 
 vk::raii::DescriptorSetLayout IQM::GPU::VulkanRuntime::createDescLayout(const std::vector<vk::DescriptorSetLayoutBinding> &bindings) const {
@@ -656,3 +628,34 @@ void IQM::GPU::VulkanRuntime::waitForFence(const vk::raii::Fence &fence) const {
         throw std::runtime_error("Failed to wait for fence");
     }
 }
+
+vk::WriteDescriptorSet IQM::GPU::VulkanRuntime::createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorImageInfo> &imgInfos) {
+    vk::WriteDescriptorSet writeSet{
+        .dstSet = descSet,
+        .dstBinding = dstBinding,
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32_t>(imgInfos.size()),
+        .descriptorType = vk::DescriptorType::eStorageImage,
+        .pImageInfo = imgInfos.data(),
+        .pBufferInfo = nullptr,
+        .pTexelBufferView = nullptr,
+    };
+
+    return writeSet;
+}
+
+vk::WriteDescriptorSet IQM::GPU::VulkanRuntime::createWriteSet(const vk::DescriptorSet &descSet, uint32_t dstBinding, const std::vector<vk::DescriptorBufferInfo> &bufInfos) {
+    vk::WriteDescriptorSet writeSet{
+        .dstSet = descSet,
+        .dstBinding = dstBinding,
+        .dstArrayElement = 0,
+        .descriptorCount = static_cast<uint32_t>(bufInfos.size()),
+        .descriptorType = vk::DescriptorType::eStorageBuffer,
+        .pImageInfo = nullptr,
+        .pBufferInfo = bufInfos.data(),
+        .pTexelBufferView = nullptr,
+    };
+
+    return writeSet;
+}
+

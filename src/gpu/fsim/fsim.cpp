@@ -311,49 +311,29 @@ void IQM::GPU::FSIM::createDownscaledImages(const VulkanRuntime &runtime, int wi
         this->imageGradientMapRef,
     });
 
-    const vk::WriteDescriptorSet writeSetInput{
-        .dstSet = this->descSetDownscaleIn,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfosInput.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetInput = VulkanRuntime::createWriteSet(
+        this->descSetDownscaleIn,
+        0,
+        imageInfosInput
+    );
 
-    const vk::WriteDescriptorSet writeSetRef{
-        .dstSet = this->descSetDownscaleRef,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfosRef.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetRef = VulkanRuntime::createWriteSet(
+        this->descSetDownscaleRef,
+        0,
+        imageInfosRef
+    );
 
-    const vk::WriteDescriptorSet writeSetGradIn{
-        .dstSet = this->descSetGradientMapIn,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfosGradIn.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetGradIn = VulkanRuntime::createWriteSet(
+        this->descSetGradientMapIn,
+        0,
+        imageInfosGradIn
+    );
 
-    const vk::WriteDescriptorSet writeSetGradRef{
-        .dstSet = this->descSetGradientMapRef,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 2,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfosGradRef.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetGradRef = VulkanRuntime::createWriteSet(
+        this->descSetGradientMapRef,
+        0,
+        imageInfosGradRef
+    );
 
     const std::vector writes = {
         writeSetRef, writeSetInput, writeSetGradIn, writeSetGradRef
@@ -490,27 +470,17 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     auto imInfoInImage = VulkanRuntime::createImageInfos({
         this->imageInputDownscaled,
     });
-    const vk::WriteDescriptorSet writeSetInImage{
-        .dstSet = this->descSetExtractLumaIn,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imInfoInImage.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetInImage = VulkanRuntime::createWriteSet(
+        this->descSetExtractLumaIn,
+        0,
+        imInfoInImage
+    );
 
-    const vk::WriteDescriptorSet writeSetInBuf{
-        .dstSet = this->descSetExtractLumaIn,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = bufIn.data(),
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetInBuf = VulkanRuntime::createWriteSet(
+        this->descSetExtractLumaIn,
+        1,
+        bufIn
+    );
 
     std::vector bufRef = {
         vk::DescriptorBufferInfo{
@@ -523,27 +493,17 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
     auto imInfoRefImage = VulkanRuntime::createImageInfos({
         this->imageRefDownscaled,
     });
-    const vk::WriteDescriptorSet writeSetRefImage{
-        .dstSet = this->descSetExtractLumaRef,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imInfoRefImage.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetRefImage = VulkanRuntime::createWriteSet(
+        this->descSetExtractLumaRef,
+        0,
+        imInfoRefImage
+    );
 
-    const vk::WriteDescriptorSet writeSetRefBuf{
-        .dstSet = this->descSetExtractLumaRef,
-        .dstBinding = 1,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageBuffer,
-        .pImageInfo = nullptr,
-        .pBufferInfo = bufRef.data(),
-        .pTexelBufferView = nullptr,
-    };
+    auto writeSetRefBuf = VulkanRuntime::createWriteSet(
+        this->descSetExtractLumaRef,
+        1,
+        bufRef
+    );
 
     const std::vector writes = {
         writeSetInImage, writeSetInBuf, writeSetRefImage, writeSetRefBuf

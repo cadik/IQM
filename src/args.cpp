@@ -1,6 +1,6 @@
 /*
-* Image Quality Metrics
- * Petr Volf - 2024
+ * Image Quality Metrics
+ * Petr Volf - 2025
  */
 
 #include "args.h"
@@ -26,6 +26,9 @@ IQM::Args::Args(const unsigned argc, const char *argv[]) {
                 } else if (strcmp(argv[i + 1], "FSIM") == 0) {
                     this->method = Method::FSIM;
                     parsedMethod = true;
+                } else if (strcmp(argv[i + 1], "FLIP") == 0) {
+                    this->method = Method::FLIP;
+                    parsedMethod = true;
                 } else {
                     throw std::runtime_error("Unknown method");
                 }
@@ -37,6 +40,8 @@ IQM::Args::Args(const unsigned argc, const char *argv[]) {
                 parsedReference = true;
             } else if (strcmp(argv[i], "--output") == 0) {
                 this->outputPath = std::string(argv[i + 1]);
+            } else {
+                this->options.emplace(std::string(argv[i]), std::string(argv[i + 1]));
             }
         }
         if (strcmp(argv[i], "-v") == 0) {

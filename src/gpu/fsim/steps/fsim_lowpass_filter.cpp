@@ -72,16 +72,11 @@ void IQM::GPU::FSIMLowpassFilter::prepareImageStorage(const VulkanRuntime &runti
         this->imageLowpassFilter,
     });
 
-    const vk::WriteDescriptorSet writeSet{
-        .dstSet = this->descSet,
-        .dstBinding = 0,
-        .dstArrayElement = 0,
-        .descriptorCount = 1,
-        .descriptorType = vk::DescriptorType::eStorageImage,
-        .pImageInfo = imageInfos.data(),
-        .pBufferInfo = nullptr,
-        .pTexelBufferView = nullptr,
-    };
+    const auto writeSet = VulkanRuntime::createWriteSet(
+        descSet,
+        0,
+        imageInfos
+    );
 
     const std::vector writes = {
         writeSet

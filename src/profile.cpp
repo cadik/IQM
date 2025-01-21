@@ -29,6 +29,10 @@
 #include <fsim.h>
 #endif
 
+#if COMPILE_FLIP
+#include <flip.h>
+#endif
+
 InputImage load_image(const std::string &filename) {
     // force all images to always open in RGBA format to prevent issues with separate RGB and RGBA loading
     int x, y, channels;
@@ -51,7 +55,7 @@ InputImage load_image(const std::string &filename) {
     };
 }
 
-void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
+void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::SSIM &ssim) {
 #if COMPILE_SSIM
     auto input = load_image(args.inputPath);
     auto reference = load_image(args.refPath);
@@ -59,8 +63,6 @@ void ssim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     if (input.width != reference.width || input.height != reference.height) {
         throw std::runtime_error("Compared images must have the same size");
     }
-
-    IQM::GPU::SSIM ssim(vulkan);
 
     // starts only in debug, needs to init after vulkan
     initRenderDoc();
@@ -131,7 +133,7 @@ void svd(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     }
 }
 
-void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
+void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::FSIM &fsim) {
 #ifdef COMPILE_FSIM
     auto input = load_image(args.inputPath);
     auto reference = load_image(args.refPath);
@@ -139,8 +141,6 @@ void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     if (input.width != reference.width || input.height != reference.height) {
         throw std::runtime_error("Compared images must have the same size");
     }
-
-    IQM::GPU::FSIM fsim(vulkan);
 
     if (args.verbose) {
         std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl;
@@ -163,6 +163,51 @@ void fsim(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan) {
     }
 #else
     throw std::runtime_error("FSIM support was not compiled");
+#endif
+}
+
+void flip(const IQM::Args& args, const IQM::GPU::VulkanRuntime &vulkan, IQM::GPU::FLIP &flip) {
+#ifdef COMPILE_FLIP
+    auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
+
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
+
+    auto flip_args = IQM::GPU::FLIPArguments{};
+    if (args.options.contains("FLIP_WIDTH")) {
+        flip_args.monitor_width = std::stof(args.options.at("FLIP_WIDTH"));
+    }
+    if (args.options.contains("FLIP_RES")) {
+        flip_args.monitor_resolution_x = std::stof(args.options.at("FLIP_RES"));
+    }
+    if (args.options.contains("FLIP_DISTANCE")) {
+        flip_args.monitor_distance = std::stof(args.options.at("FLIP_DISTANCE"));
+    }
+
+    if (args.verbose) {
+        std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl
+        << "FLIP monitor resolution: "<< flip_args.monitor_resolution_x << std::endl
+        << "FLIP monitor distance: "<< flip_args.monitor_distance << std::endl
+        << "FLIP monitor width: "<< flip_args.monitor_width << std::endl;
+    }
+
+    // starts only in debug, needs to init after vulkan
+    initRenderDoc();
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto result = flip.computeMetric(vulkan, input, reference, flip_args);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    // saves capture for debugging
+    finishRenderDoc();
+
+    if (args.verbose) {
+        result.timestamps.print(start, end);
+    }
+#else
+    throw std::runtime_error("FLIP support was not compiled");
 #endif
 }
 
@@ -203,13 +248,17 @@ int main(int argc, const char **argv) {
     vulkan.createSwapchain(surface);
     glfwShowWindow(window);
 
+    IQM::GPU::SSIM ssimMethod(vulkan);
+    IQM::GPU::FSIM fsimMethod(vulkan);
+    IQM::GPU::FLIP flipMethod(vulkan);
+
     while (!glfwWindowShouldClose(window)) {
         try {
             auto index = vulkan.acquire();
 
             switch (args.method) {
                 case IQM::Method::SSIM:
-                    ssim(args, vulkan);
+                    ssim(args, vulkan, ssimMethod);
                 break;
                 case IQM::Method::CW_SSIM_CPU:
                 break;
@@ -217,7 +266,10 @@ int main(int argc, const char **argv) {
                     svd(args, vulkan);
                 break;
                 case IQM::Method::FSIM:
-                    fsim(args, vulkan);
+                    fsim(args, vulkan, fsimMethod);
+                break;
+                case IQM::Method::FLIP:
+                    flip(args, vulkan, flipMethod);
                 break;
             }
 

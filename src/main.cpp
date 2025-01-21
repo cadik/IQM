@@ -30,6 +30,10 @@
 #include <fsim.h>
 #endif
 
+#if COMPILE_FLIP
+#include <flip.h>
+#endif
+
 InputImage load_image(const std::string &filename) {
     // force all images to always open in RGBA format to prevent issues with separate RGB and RGBA loading
     int x, y, channels;
@@ -209,6 +213,54 @@ void fsim(const IQM::Args& args) {
 #endif
 }
 
+void flip(const IQM::Args& args) {
+#ifdef COMPILE_FLIP
+    auto input = load_image(args.inputPath);
+    auto reference = load_image(args.refPath);
+
+    if (input.width != reference.width || input.height != reference.height) {
+        throw std::runtime_error("Compared images must have the same size");
+    }
+
+    const IQM::GPU::VulkanRuntime vulkan;
+    IQM::GPU::FLIP flip(vulkan);
+
+    auto flip_args = IQM::GPU::FLIPArguments{};
+    if (args.options.contains("FLIP_WIDTH")) {
+        flip_args.monitor_width = std::stof(args.options.at("FLIP_WIDTH"));
+    }
+    if (args.options.contains("FLIP_RES")) {
+        flip_args.monitor_resolution_x = std::stof(args.options.at("FLIP_RES"));
+    }
+    if (args.options.contains("FLIP_DISTANCE")) {
+        flip_args.monitor_distance = std::stof(args.options.at("FLIP_DISTANCE"));
+    }
+
+    if (args.verbose) {
+        std::cout << "Selected device: "<< vulkan.selectedDevice << std::endl
+        << "FLIP monitor resolution: "<< flip_args.monitor_resolution_x << std::endl
+        << "FLIP monitor distance: "<< flip_args.monitor_distance << std::endl
+        << "FLIP monitor width: "<< flip_args.monitor_width << std::endl;
+    }
+
+    // starts only in debug, needs to init after vulkan
+    initRenderDoc();
+
+    auto start = std::chrono::high_resolution_clock::now();
+    auto result = flip.computeMetric(vulkan, input, reference, flip_args);
+    auto end = std::chrono::high_resolution_clock::now();
+
+    // saves capture for debugging
+    finishRenderDoc();
+
+    if (args.verbose) {
+        result.timestamps.print(start, end);
+    }
+#else
+    throw std::runtime_error("FLIP support was not compiled");
+#endif
+}
+
 int main(int argc, const char **argv) {
     auto args = IQM::Args(argc, argv);
     if (args.verbose) {
@@ -227,6 +279,9 @@ int main(int argc, const char **argv) {
                 break;
             case IQM::Method::FSIM:
                 fsim(args);
+                break;
+            case IQM::Method::FLIP:
+                flip(args);
                 break;
         }
     } catch (const std::exception& e) {
