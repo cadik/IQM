@@ -38,13 +38,10 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
     this->multPackDescSet = std::move(sets[0]);
     this->sumDescSet = std::move(sets[1]);
 
-    // 1x int - index of current execution
-    const auto multPackRanges = VulkanRuntime::createPushConstantRange(1 * sizeof(int));
-
     // 3x int - buffer size, index of current execution, bool
     const auto sumRanges = VulkanRuntime::createPushConstantRange(3 * sizeof(int));
 
-    this->multPacklayout = runtime.createPipelineLayout({this->multPackDescSetLayout}, multPackRanges);
+    this->multPacklayout = runtime.createPipelineLayout({this->multPackDescSetLayout}, {});
     this->multPackPipeline = runtime.createComputePipeline(this->multPackKernel, this->multPacklayout);
 
     this->sumLayout = runtime.createPipelineLayout({this->sumDescSetLayout}, sumRanges);
@@ -54,10 +51,10 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
 void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, const vk::raii::Buffer& fftImages, int width, int height) {
     this->prepareBufferStorage(runtime, angulars, logGabor, fftImages, width, height);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
+    /*const vk::CommandBufferBeginInfo beginInfo = {
         .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
     };
-    runtime._cmd_buffer->begin(beginInfo);
+    runtime._cmd_buffer->begin(beginInfo);*/
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->multPackPipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->multPacklayout, 0, {this->multPackDescSet}, {});
@@ -65,11 +62,7 @@ void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runti
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
-    for (unsigned n = 0; n < FSIM_ORIENTATIONS * FSIM_SCALES; n++) {
-        runtime._cmd_buffer->pushConstants<unsigned>(this->multPacklayout, vk::ShaderStageFlagBits::eCompute, 0, n);
-
-        runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-    }
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, FSIM_ORIENTATIONS * FSIM_SCALES);
 
     vk::MemoryBarrier barrier = {
         .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
@@ -136,22 +129,6 @@ void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runti
             doPower = false;
         }
     }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
 }
 
 void IQM::GPU::FSIMFilterCombinations::prepareBufferStorage(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, const vk::raii::Buffer& fftImages, int width, int height) {

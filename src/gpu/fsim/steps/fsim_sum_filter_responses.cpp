@@ -30,10 +30,7 @@ IQM::GPU::FSIMSumFilterResponses::FSIMSumFilterResponses(const VulkanRuntime &ru
     auto sets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
     this->descSet = std::move(sets[0]);
 
-    // 1x float - orientation
-    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(int));
-
-    this->layout = runtime.createPipelineLayout(layouts, ranges);
+    this->layout = runtime.createPipelineLayout(layouts, {});
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 
     this->filterResponsesInput = std::vector<std::shared_ptr<VulkanImage>>(FSIM_ORIENTATIONS);
@@ -42,11 +39,6 @@ IQM::GPU::FSIMSumFilterResponses::FSIMSumFilterResponses(const VulkanRuntime &ru
 
 void IQM::GPU::FSIMSumFilterResponses::computeSums(const VulkanRuntime &runtime, const vk::raii::Buffer &filters, int width, int height) {
     this->prepareImageStorage(runtime, filters, width, height);
-
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
@@ -59,27 +51,7 @@ void IQM::GPU::FSIMSumFilterResponses::computeSums(const VulkanRuntime &runtime,
     images.insert(images.end(),this->filterResponsesRef.begin(),this->filterResponsesRef.end());
     VulkanRuntime::initImages(runtime._cmd_buffer, images);
 
-    for (int i = 0; i < FSIM_ORIENTATIONS; i++) {
-        runtime._cmd_buffer->pushConstants<int>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, i);
-
-        runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-    }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, FSIM_ORIENTATIONS);
 }
 
 void IQM::GPU::FSIMSumFilterResponses::prepareImageStorage(const VulkanRuntime &runtime, const vk::raii::Buffer &filters, int width, int height) {

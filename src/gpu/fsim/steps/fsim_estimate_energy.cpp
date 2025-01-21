@@ -36,13 +36,13 @@ IQM::GPU::FSIMEstimateEnergy::FSIMEstimateEnergy(const VulkanRuntime &runtime) {
     this->estimateEnergyDescSet = std::move(sets[0]);
     this->sumDescSet = std::move(sets[1]);
 
-    // 2x int
-    const auto estimateEnergyRanges = VulkanRuntime::createPushConstantRange(2 * sizeof(int));
+    const auto estimateEnergyRanges = VulkanRuntime::createPushConstantRange(sizeof(int));
+    const auto sumRanges = VulkanRuntime::createPushConstantRange(2 * sizeof(int));
 
     this->estimateEnergyLayout = runtime.createPipelineLayout({this->estimateEnergyDescSetLayout}, estimateEnergyRanges);
     this->estimateEnergyPipeline = runtime.createComputePipeline(this->estimateEnergyKernel, this->estimateEnergyLayout);
 
-    this->sumLayout = runtime.createPipelineLayout({this->sumDescSetLayout}, estimateEnergyRanges);
+    this->sumLayout = runtime.createPipelineLayout({this->sumDescSetLayout}, sumRanges);
     this->sumPipeline = runtime.createComputePipeline(this->sumKernel, this->sumLayout);
 }
 
@@ -61,11 +61,7 @@ void IQM::GPU::FSIMEstimateEnergy::estimateEnergy(const VulkanRuntime &runtime, 
     //shader works in groups of 128 threads
     auto groupsX = ((width * height) / 128) + 1;
 
-    for (int o = 0; o < FSIM_ORIENTATIONS; o++) {
-        runtime._cmd_buffer->pushConstants<unsigned>(this->estimateEnergyLayout, vk::ShaderStageFlagBits::eCompute, 1 * sizeof(int), o);
-
-        runtime._cmd_buffer->dispatch(groupsX, 1, 1);
-    }
+    runtime._cmd_buffer->dispatch(groupsX, 1, FSIM_ORIENTATIONS);
 
     vk::MemoryBarrier memBarrier = {
         .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
@@ -116,22 +112,6 @@ void IQM::GPU::FSIMEstimateEnergy::estimateEnergy(const VulkanRuntime &runtime, 
             groups = (groups / 128) + 1;
         }
     }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
 }
 
 void IQM::GPU::FSIMEstimateEnergy::prepareBufferStorage(const VulkanRuntime &runtime, const vk::raii::Buffer &fftBuf, const int width, const int height) {

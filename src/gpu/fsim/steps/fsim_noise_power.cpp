@@ -117,12 +117,20 @@ void IQM::GPU::FSIMNoisePower::computeNoisePower(const VulkanRuntime &runtime, c
         writeSetIn, writeSetOut,
     };
 
-    runtime._device.updateDescriptorSets(writes, nullptr);
-
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    vk::MemoryBarrier barrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eShaderRead,
     };
-    runtime._cmd_buffer->begin(beginInfo);
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup,
+        {barrier},
+        {},
+        {}
+    );
+
+    runtime._device.updateDescriptorSets(writes, nullptr);
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});

@@ -23,16 +23,13 @@ layout(std430, set = 0, binding = 2) buffer InEnergyEstBufs {
 // each pixel is [Am, Energy, 0, 0]
 layout(set = 0, binding = 3, rg32f) uniform readonly image2D filter_responses[8];
 
-layout( push_constant ) uniform constants {
-    uint index;
-} push_consts;
-
 void main() {
     float k = 2.0;
 
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-    ivec2 size = imageSize(phase_congruency[push_consts.index]);
+    uint z = gl_WorkGroupID.z;
+    ivec2 size = imageSize(phase_congruency[z]);
     ivec2 pos = ivec2(x, y);
 
     if (x >= size.x || y >= size.y) {
@@ -43,7 +40,7 @@ void main() {
     float ampTotal = 0.0;
 
     for (int o = 0; o < ORIENTATIONS; o++) {
-        float noisePower = noisePowers[o + ORIENTATIONS * push_consts.index];
+        float noisePower = noisePowers[o + ORIENTATIONS * z];
         float sumEstSumAn2 = energyEsts[2 * o].est;
         float sumEstSumAiAj = energyEsts[2 * o + 1].est;
         float estNoiseEnergy2 = 2.0 * noisePower * sumEstSumAn2 + 4.0 * noisePower * sumEstSumAiAj;
@@ -55,7 +52,7 @@ void main() {
         float T = estNoiseEnergy + k * estNoiseEnergySigma;
         T = T/1.7;
 
-        vec2 amp_energy = imageLoad(filter_responses[o + push_consts.index * ORIENTATIONS], pos).xy;
+        vec2 amp_energy = imageLoad(filter_responses[o + z * ORIENTATIONS], pos).xy;
 
         float energy = max(amp_energy.y - T, 0);
         energyTotal += energy;
@@ -64,5 +61,5 @@ void main() {
 
     float val = energyTotal / ampTotal;
 
-    imageStore(phase_congruency[push_consts.index], pos, vec4(val));
+    imageStore(phase_congruency[z], pos, vec4(val));
 }

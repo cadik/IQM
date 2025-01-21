@@ -13,22 +13,19 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 
 // each pixel is [Am, Energy, 0, 0]
-layout(set = 0, binding = 0, rg32f) uniform writeonly image2D filter_responses_input[4];
+layout(set = 0, binding = 0, rg32f) uniform writeonly image2D filter_responses_input[ORIENTATIONS];
 // each pixel is [Am, Energy, 0, 0]
-layout(set = 0, binding = 1, rg32f) uniform writeonly image2D filter_responses_ref[4];
+layout(set = 0, binding = 1, rg32f) uniform writeonly image2D filter_responses_ref[ORIENTATIONS];
 layout(std430, set = 0, binding = 2) buffer readonly InFFTBuf {
     float inData[];
 };
 
-layout( push_constant ) uniform constants {
-    int orientation;
-} push_consts;
-
 void main() {
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
+    uint z = gl_WorkGroupID.z;
     ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(filter_responses_input[push_consts.orientation]);
+    ivec2 size = imageSize(filter_responses_input[z]);
 
     if (x >= size.x || y >= size.y) {
         return;
@@ -41,7 +38,7 @@ void main() {
     uint stride = floatsPerImage * OxS;
 
     uint pixelOffset = (pos.x + pos.y * size.x) * 2;
-    uint orientationOffset = floatsPerImage * push_consts.orientation * ORIENTATIONS;
+    uint orientationOffset = floatsPerImage * z * ORIENTATIONS;
 
     for (uint i = 0; i < SCALES; i++) {
         uint scaleOffset = i * floatsPerImage;
@@ -82,6 +79,6 @@ void main() {
         energyRef += realRef * sumsRef.y + imRef * sumsRef.z - abs(realRef * sumsRef.z - imRef * sumsRef.y);
     }
 
-    imageStore(filter_responses_input[push_consts.orientation], pos, vec4(sumsIn.x, energyIn, 0.0, 0.0));
-    imageStore(filter_responses_ref[push_consts.orientation], pos, vec4(sumsRef.x, energyRef, 0.0, 0.0));
+    imageStore(filter_responses_input[z], pos, vec4(sumsIn.x, energyIn, 0.0, 0.0));
+    imageStore(filter_responses_ref[z], pos, vec4(sumsRef.x, energyRef, 0.0, 0.0));
 }

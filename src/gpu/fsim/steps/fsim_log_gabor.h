@@ -17,8 +17,8 @@ namespace IQM::GPU {
         vk::raii::ShaderModule kernel = VK_NULL_HANDLE;
         vk::raii::PipelineLayout layout = VK_NULL_HANDLE;
         vk::raii::Pipeline pipeline = VK_NULL_HANDLE;
-
-        std::vector<vk::raii::DescriptorSet> descSets;
+        vk::raii::DescriptorSetLayout descSetLayout = VK_NULL_HANDLE;
+        vk::raii::DescriptorSet descSet = VK_NULL_HANDLE;
         std::vector<std::shared_ptr<VulkanImage>> imageLogGaborFilters;
     private:
         void prepareImageStorage(const VulkanRuntime &runtime, const std::shared_ptr<VulkanImage> &lowpass, int width, int height);

@@ -10,27 +10,23 @@
 IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime) {
     this->kernel = runtime.createShaderModule("../shaders_out/fsim_angular.spv");
 
-    std::vector<vk::DescriptorSetLayout> totalLayouts;
-    for (unsigned i = 0; i < FSIM_ORIENTATIONS; i++) {
-        totalLayouts.push_back(*runtime._descLayoutOneImage);
-    }
+    this->descSetLayout = std::move(runtime.createDescLayout({
+        {vk::DescriptorType::eStorageImage, FSIM_ORIENTATIONS},
+    }));
 
     const std::vector layout = {
-        *runtime._descLayoutOneImage,
+        *this->descSetLayout,
     };
 
     vk::DescriptorSetAllocateInfo descriptorSetAllocateInfo = {
         .descriptorPool = runtime._descPool,
-        .descriptorSetCount = static_cast<uint32_t>(totalLayouts.size()),
-        .pSetLayouts = totalLayouts.data()
+        .descriptorSetCount = static_cast<uint32_t>(layout.size()),
+        .pSetLayouts = layout.data()
     };
 
-    this->descSets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
+    this->descSet = std::move(vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo}.front());
 
-    // 2x int - current orientation, total orientations
-    const auto ranges = VulkanRuntime::createPushConstantRange(2 * sizeof(int));
-
-    this->layout = runtime.createPipelineLayout(layout, ranges);
+    this->layout = runtime.createPipelineLayout(layout, {});
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 
     this->imageAngularFilters = std::vector<std::shared_ptr<VulkanImage>>(FSIM_ORIENTATIONS);
@@ -39,20 +35,15 @@ IQM::GPU::FSIMAngularFilter::FSIMAngularFilter(const VulkanRuntime &runtime) {
 void IQM::GPU::FSIMAngularFilter::constructFilter(const VulkanRuntime &runtime, int width, int height) {
     this->prepareImageStorage(runtime, width, height);
 
+    VulkanRuntime::initImages(runtime._cmd_buffer, this->imageAngularFilters);
+
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
+    runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     //shader works in 16x16 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 16);
 
-    for (unsigned orientation = 0; orientation < FSIM_ORIENTATIONS; orientation++) {
-        runtime.setImageLayout(runtime._cmd_buffer, this->imageAngularFilters[orientation]->image, vk::ImageLayout::eUndefined, vk::ImageLayout::eGeneral);
-
-        runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSets[orientation]}, {});
-        runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, orientation);
-        runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, sizeof(int), FSIM_ORIENTATIONS);
-
-        runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-    }
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, FSIM_ORIENTATIONS);
 }
 
 void IQM::GPU::FSIMAngularFilter::prepareImageStorage(const VulkanRuntime &runtime, int width, int height) {
@@ -74,18 +65,18 @@ void IQM::GPU::FSIMAngularFilter::prepareImageStorage(const VulkanRuntime &runti
 
     for (unsigned i = 0; i < FSIM_ORIENTATIONS; i++) {
         this->imageAngularFilters[i] = std::make_shared<VulkanImage>(runtime.createImage(imageInfo));
-
-        auto imageInfos = VulkanRuntime::createImageInfos({this->imageAngularFilters[i]});
-        const auto writeSet = VulkanRuntime::createWriteSet(
-            this->descSets[i],
-            0,
-            imageInfos
-        );
-
-        const std::vector writes = {
-            writeSet,
-        };
-
-        runtime._device.updateDescriptorSets(writes, nullptr);
     }
+
+    auto imageInfos = VulkanRuntime::createImageInfos({this->imageAngularFilters});
+    const auto writeSet = VulkanRuntime::createWriteSet(
+        this->descSet,
+        0,
+        imageInfos
+    );
+
+    const std::vector writes = {
+        writeSet,
+    };
+
+    runtime._device.updateDescriptorSets(writes, nullptr);
 }

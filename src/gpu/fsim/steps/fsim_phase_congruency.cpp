@@ -31,10 +31,7 @@ IQM::GPU::FSIMPhaseCongruency::FSIMPhaseCongruency(const VulkanRuntime &runtime)
     auto sets = vk::raii::DescriptorSets{runtime._device, descriptorSetAllocateInfo};
     this->descSet = std::move(sets[0]);
 
-    // 1x int - index
-    const auto ranges = VulkanRuntime::createPushConstantRange(sizeof(int));
-
-    this->layout = runtime.createPipelineLayout(layouts, ranges);
+    this->layout = runtime.createPipelineLayout(layouts, {});
     this->pipeline = runtime.createComputePipeline(this->kernel, this->layout);
 }
 
@@ -53,11 +50,6 @@ void IQM::GPU::FSIMPhaseCongruency::compute(
 
     this->prepareImageStorage(runtime, noiseLevels, energyEstimates, filterRes, width, height);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     VulkanRuntime::initImages(runtime._cmd_buffer, {this->pcInput, this->pcRef});
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
@@ -66,26 +58,7 @@ void IQM::GPU::FSIMPhaseCongruency::compute(
     //shader works in 8x8 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
 
-    runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, 0u);
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-    runtime._cmd_buffer->pushConstants<unsigned>(this->layout, vk::ShaderStageFlagBits::eCompute, 0, 1u);
-    runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
+    runtime._cmd_buffer->dispatch(groupsX, groupsY, 2);
 }
 
 void IQM::GPU::FSIMPhaseCongruency::prepareImageStorage(

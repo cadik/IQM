@@ -82,17 +82,14 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
     this->initFftLibrary(runtime, widthDownscale, heightDownscale);
     result.timestamps.mark("FFT library initialized");
 
-    // parallel execution of these steps is possible, so use it
-    {
-        const vk::CommandBufferBeginInfo beginInfo = {
-            .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-        };
-        runtime._cmd_buffer->begin(beginInfo);
+    const vk::CommandBufferBeginInfo beginInfo = {
+        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    };
+    runtime._cmd_buffer->begin(beginInfo);
 
-        this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
-        this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
-        this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
-    }
+    this->createDownscaledImages(runtime, widthDownscale, heightDownscale);
+    this->computeDownscaledImages(runtime, F, widthDownscale, heightDownscale);
+    this->lowpassFilter.constructFilter(runtime, widthDownscale, heightDownscale);
 
     vk::MemoryBarrier barrier{
         .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
@@ -108,51 +105,32 @@ IQM::GPU::FSIMResult IQM::GPU::FSIM::computeMetric(const VulkanRuntime &runtime,
         nullptr
     );
 
-    // parallel execution of these steps is possible, so use it
-    {
-        this->createGradientMap(runtime, widthDownscale, heightDownscale);
-        this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
-        this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
+    this->createGradientMap(runtime, widthDownscale, heightDownscale);
+    this->logGaborFilter.constructFilter(runtime, this->lowpassFilter.imageLowpassFilter, widthDownscale, heightDownscale);
+    this->angularFilter.constructFilter(runtime, widthDownscale, heightDownscale);
 
-        runtime._cmd_buffer->end();
-
-        const std::vector cmdBufs = {
-            &**runtime._cmd_buffer
-        };
-
-        const vk::SubmitInfo submitInfo{
-            .commandBufferCount = 1,
-            .pCommandBuffers = *cmdBufs.data()
-        };
-
-        const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-        runtime._queue->submit(submitInfo, *fence);
-        runtime.waitForFence(fence);
-
-        result.timestamps.mark("images downscaled + lowpass filter, gradients, log gabor and angular filters computed");
-    }
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::DependencyFlagBits::eDeviceGroup,
+        {barrier},
+        nullptr,
+        nullptr
+    );
 
     this->computeFft(runtime, widthDownscale, heightDownscale);
-    result.timestamps.mark("fft computed");
-
     this->combinations.combineFilters(runtime, this->angularFilter, this->logGaborFilter, this->bufferFft, widthDownscale, heightDownscale);
-    result.timestamps.mark("filters combined");
-
     this->computeMassInverseFft(runtime, this->combinations.fftBuffer);
-    result.timestamps.mark("mass ifft computed");
 
     this->sumFilterResponses.computeSums(runtime, this->combinations.fftBuffer, widthDownscale, heightDownscale);
-    result.timestamps.mark("filter responses computed");
+    result.timestamps.mark("pre median work recorded");
 
     this->noise_power.computeNoisePower(runtime, this->combinations.noiseLevels, this->combinations.fftBuffer, widthDownscale, heightDownscale);
     result.timestamps.mark("noise powers computed");
 
     this->estimateEnergy.estimateEnergy(runtime, this->combinations.fftBuffer, widthDownscale, heightDownscale);
-    result.timestamps.mark("noise energy computed");
 
     this->phaseCongruency.compute(runtime, this->noise_power.noisePowers, this->estimateEnergy.energyBuffers, this->sumFilterResponses.filterResponsesInput, this->sumFilterResponses.filterResponsesRef, widthDownscale, heightDownscale);
-    result.timestamps.mark("phase congruency computed");
 
     auto metrics = this->final_multiply.computeMetrics(
         runtime,
@@ -511,11 +489,6 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
 
     runtime._device.updateDescriptorSets(writes, nullptr);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     //shader works in 8x8 tiles
     auto [groupsX, groupsY] = VulkanRuntime::compute2DGroupCounts(width, height, 8);
 
@@ -549,28 +522,9 @@ void IQM::GPU::FSIM::computeFft(const VulkanRuntime &runtime, const int width, c
         std::string err = "failed to append FFT: " + std::to_string(res);
         throw std::runtime_error(err);
     }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
 }
 
 void IQM::GPU::FSIM::computeMassInverseFft(const VulkanRuntime &runtime, const vk::raii::Buffer &buffer) {
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
 
     VkFFTLaunchParams launchParams = {};
     VkCommandBuffer cmdBuf = **runtime._cmd_buffer;
@@ -582,19 +536,4 @@ void IQM::GPU::FSIM::computeMassInverseFft(const VulkanRuntime &runtime, const v
         std::string err = "failed to append inverse FFT: " + std::to_string(res);
         throw std::runtime_error(err);
     }
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
 }

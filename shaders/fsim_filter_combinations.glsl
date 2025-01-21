@@ -21,22 +21,18 @@ layout(std430, set = 0, binding = 3) buffer writeonly OutFFTBuf {
     float outData[];
 };
 
-layout( push_constant ) uniform constants {
-    // execution index
-    uint index;
-} push_consts;
-
 void main() {
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
+    uint z = gl_WorkGroupID.z;
 
-    uint gabor_index = push_consts.index % SCALES;
-    uint angular_index = push_consts.index / ORIENTATIONS;
+    uint gabor_index = z % SCALES;
+    uint angular_index = z / ORIENTATIONS;
 
     ivec2 size = imageSize(gabor_filters[gabor_index]);
     ivec2 pos = ivec2(x, y);
 
-    uint offset = push_consts.index * size.x * size.y * 2;
+    uint offset = z * size.x * size.y * 2;
     uint stride = size.x * size.y * 2 * OxS;
 
     if (x >= size.x || y >= size.y) {

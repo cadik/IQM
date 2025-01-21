@@ -21,11 +21,11 @@ layout(std430, set = 0, binding = 1) buffer writeonly Out {
 
 layout( push_constant ) uniform constants {
     uint size;
-    uint orientation;
 } push_consts;
 
 void main() {
     uint x = (gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x) * 2;
+    uint z = gl_WorkGroupID.z;
 
     if (x >= push_consts.size) {
         return;
@@ -36,24 +36,24 @@ void main() {
 
     float sumAn2 = 0.0;
     for (uint i = 0; i < SCALES; i++) {
-        uint inputIndex = subBufferSize * (i + push_consts.orientation * ORIENTATIONS) + x;
+        uint inputIndex = subBufferSize * (i + z * ORIENTATIONS) + x;
 
         float value = pow(inData[inputIndex], 2.0) * push_consts.size;
 
         sumAn2 += value;
     }
-    outBuf[push_consts.orientation * 2].outData[x/2] = sumAn2;
+    outBuf[z * 2].outData[x/2] = sumAn2;
 
     float sumAnCross = 0.0;
     for (uint i = 0; i < SCALES - 1; i++) {
         for (uint j = i + 1; j < SCALES; j++) {
-            uint inputIndex1 = subBufferSize * (i + push_consts.orientation * ORIENTATIONS) + x;
-            uint inputIndex2 = subBufferSize * (j + push_consts.orientation * ORIENTATIONS) + x;
+            uint inputIndex1 = subBufferSize * (i + z * ORIENTATIONS) + x;
+            uint inputIndex2 = subBufferSize * (j + z * ORIENTATIONS) + x;
 
             float value = inData[inputIndex1] * inData[inputIndex2] * push_consts.size;
 
             sumAnCross += value;
         }
     }
-    outBuf[push_consts.orientation * 2 + 1].outData[x/2] = sumAnCross;
+    outBuf[z * 2 + 1].outData[x/2] = sumAnCross;
 }

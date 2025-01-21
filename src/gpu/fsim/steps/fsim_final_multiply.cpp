@@ -58,11 +58,6 @@ std::pair<float, float> IQM::GPU::FSIMFinalMultiply::computeMetrics(
     ) {
     this->prepareImageStorage(runtime, inputImgs, gradientImgs, pcImgs, width, height);
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);
-
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->pipeline);
 
     //shader works in 8x8 tiles
@@ -73,22 +68,6 @@ std::pair<float, float> IQM::GPU::FSIMFinalMultiply::computeMetrics(
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->layout, 0, {this->descSet}, {});
 
     runtime._cmd_buffer->dispatch(groupsX, groupsY, 1);
-
-    runtime._cmd_buffer->end();
-
-    const std::vector cmdBufs = {
-        &**runtime._cmd_buffer
-    };
-
-    const vk::SubmitInfo submitInfo{
-        .commandBufferCount = 1,
-        .pCommandBuffers = *cmdBufs.data()
-    };
-
-    const vk::raii::Fence fence{runtime._device, vk::FenceCreateInfo{}};
-
-    runtime._queue->submit(submitInfo, *fence);
-    runtime.waitForFence(fence);
 
     return this->sumImages(runtime, width, height);
 }
@@ -189,10 +168,18 @@ std::pair<float, float> IQM::GPU::FSIMFinalMultiply::sumImages(const VulkanRunti
     stgBuf.bindMemory(stgMem, 0);
     auto * bufData = static_cast<float*>(stgMem.mapMemory(0,  3 * sizeof(float), {}));
 
-    const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
+    vk::MemoryBarrier barrier = {
+        .srcAccessMask = vk::AccessFlagBits::eShaderWrite,
+        .dstAccessMask = vk::AccessFlagBits::eTransferRead,
     };
-    runtime._cmd_buffer->begin(beginInfo);
+    runtime._cmd_buffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eComputeShader,
+        vk::PipelineStageFlagBits::eTransfer,
+        vk::DependencyFlagBits::eDeviceGroup,
+        {barrier},
+        {},
+        {}
+    );
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->sumPipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->sumLayout, 0, {this->sumDescSet}, {});
