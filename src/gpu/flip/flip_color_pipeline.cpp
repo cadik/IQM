@@ -5,10 +5,22 @@
 
 #include "flip_color_pipeline.h"
 
+static uint32_t srcHorizontal[] =
+#include <flip/spatial_prefilter_horizontal.inc>
+;
+
+static uint32_t srcPrefilter[] =
+#include <flip/spatial_prefilter.inc>
+;
+
+static uint32_t srcDetect[] =
+#include <flip/spatial_detection.inc>
+;
+
 IQM::GPU::FLIPColorPipeline::FLIPColorPipeline(const VulkanRuntime &runtime) {
-    this->csfPrefilterHorizontalKernel = runtime.createShaderModule("../shaders_out/flip/spatial_prefilter_horizontal.spv");
-    this->csfPrefilterKernel = runtime.createShaderModule("../shaders_out/flip/spatial_prefilter.spv");
-    this->spatialDetectKernel = runtime.createShaderModule("../shaders_out/flip/spatial_detection.spv");
+    this->csfPrefilterHorizontalKernel = runtime.createShaderModule(srcHorizontal, sizeof(srcHorizontal));
+    this->csfPrefilterKernel = runtime.createShaderModule(srcPrefilter, sizeof(srcPrefilter));
+    this->spatialDetectKernel = runtime.createShaderModule(srcDetect, sizeof(srcDetect));
 
     this->csfPrefilterDescSetLayout = runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 2},

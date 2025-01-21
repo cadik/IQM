@@ -18,6 +18,7 @@ set(PROFILE_NAME ${PROJECT_NAME}-profile)
 
 find_package( Vulkan REQUIRED )
 include_directories( ${LIBRARY_ROOT}/stb )
+include_directories( ${CMAKE_CURRENT_SOURCE_DIR}/shaders_out )
 
 if(ENABLE_RENDERDOC)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DENABLE_RENDERDOC")

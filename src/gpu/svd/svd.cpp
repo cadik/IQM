@@ -10,8 +10,12 @@
 #include <algorithm>
 #include <execution>
 
+static uint32_t src[] =
+#include <svd/svd.inc>
+;
+
 IQM::GPU::SVD::SVD(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/svd.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     const std::vector layouts = {
         *runtime._descLayoutBuffer

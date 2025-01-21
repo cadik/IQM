@@ -5,8 +5,12 @@
 
 #include "fsim_lowpass_filter.h"
 
+static uint32_t src[] =
+#include <fsim/fsim_lowpassfilter.inc>
+;
+
 IQM::GPU::FSIMLowpassFilter::FSIMLowpassFilter(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_lowpassfilter.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     const std::vector layouts = {
         *runtime._descLayoutOneImage,

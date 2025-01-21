@@ -7,8 +7,12 @@
 
 #include <fsim.h>
 
+static uint32_t src[] =
+#include <fsim/fsim_sum_filter_responses.inc>
+;
+
 IQM::GPU::FSIMSumFilterResponses::FSIMSumFilterResponses(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_sum_filter_responses.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({

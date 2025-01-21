@@ -7,9 +7,17 @@
 
 #include <fsim.h>
 
+static uint32_t srcMultFilters[] =
+#include <fsim/fsim_mult_filters.inc>
+;
+
+static uint32_t srcEnergySum[] =
+#include <fsim/fsim_noise_energy_sum.inc>
+;
+
 IQM::GPU::FSIMEstimateEnergy::FSIMEstimateEnergy(const VulkanRuntime &runtime) {
-    this->estimateEnergyKernel = runtime.createShaderModule("../shaders_out/fsim_mult_filters.spv");
-    this->sumKernel = runtime.createShaderModule("../shaders_out/fsim_noise_energy_sum.spv");
+    this->estimateEnergyKernel = runtime.createShaderModule(srcMultFilters, sizeof(srcMultFilters));
+    this->sumKernel = runtime.createShaderModule(srcEnergySum, sizeof(srcEnergySum));
 
     //custom layout for this pass
     this->estimateEnergyDescSetLayout = std::move(runtime.createDescLayout({

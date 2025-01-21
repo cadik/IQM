@@ -66,25 +66,10 @@ IQM::GPU::VulkanRuntime::VulkanRuntime() {
     this->initDescriptors();
 }
 
-vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const std::string &path) const {
-    std::ifstream file(path, std::ios::ate | std::ios::binary);
-
-    if (!file.is_open()) {
-        std::string message = "Failed to open shader file " + path;
-        throw std::runtime_error(message);
-    }
-
-    const size_t fileSize = file.tellg();
-    std::vector<char> buffer(fileSize);
-
-    file.seekg(0);
-    file.read(buffer.data(), static_cast<long>(fileSize));
-
-    file.close();
-
+vk::raii::ShaderModule IQM::GPU::VulkanRuntime::createShaderModule(const uint32_t* spvCode, size_t size) const {
     vk::ShaderModuleCreateInfo shaderModuleCreateInfo{
-        .codeSize = static_cast<uint32_t>(fileSize),
-        .pCode = reinterpret_cast<uint32_t*>(buffer.data()),
+        .codeSize = size,
+        .pCode = spvCode,
     };
 
     vk::raii::ShaderModule module{this->_device, shaderModuleCreateInfo};

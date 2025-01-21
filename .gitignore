@@ -3,5 +3,6 @@ cmake-build-debug
 cmake-build-relwithdebinfo
 cmake-build-release
 shaders_out/***.*
+shaders_out/***/*.inc
 *.spv
 .directory

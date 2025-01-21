@@ -6,6 +6,18 @@
 #include "fsim.h"
 #include "../img_params.h"
 
+static uint32_t srcDownscale[] =
+#include <fsim/fsim_downsample.inc>
+;
+
+static uint32_t srcGradient[] =
+#include <fsim/fsim_gradientmap.inc>
+;
+
+static uint32_t srcExtractLuma[] =
+#include <fsim/fsim_extractluma.inc>
+;
+
 IQM::GPU::FSIM::FSIM(const VulkanRuntime &runtime):
 lowpassFilter(runtime),
 logGaborFilter(runtime),
@@ -17,9 +29,9 @@ estimateEnergy(runtime),
 phaseCongruency(runtime),
 final_multiply(runtime)
 {
-    this->downscaleKernel = runtime.createShaderModule("../shaders_out/fsim_downsample.spv");
-    this->kernelGradientMap = runtime.createShaderModule("../shaders_out/fsim_gradientmap.spv");
-    this->kernelExtractLuma = runtime.createShaderModule("../shaders_out/fsim_extractluma.spv");
+    this->downscaleKernel = runtime.createShaderModule(srcDownscale, sizeof(srcDownscale));
+    this->kernelGradientMap = runtime.createShaderModule(srcGradient, sizeof(srcGradient));
+    this->kernelExtractLuma = runtime.createShaderModule(srcExtractLuma, sizeof(srcExtractLuma));
 
     const std::vector layout_2 = {
         *runtime._descLayoutTwoImage,

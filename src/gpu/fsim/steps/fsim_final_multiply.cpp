@@ -5,9 +5,17 @@
 
 #include "fsim_final_multiply.h"
 
+static uint32_t src[] =
+#include <fsim/fsim_final_multiply.inc>
+;
+
+static uint32_t srcSum[] =
+#include <fsim/fsim_final_sum.inc>
+;
+
 IQM::GPU::FSIMFinalMultiply::FSIMFinalMultiply(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_final_multiply.spv");
-    this->sumKernel = runtime.createShaderModule("../shaders_out/fsim_final_sum.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
+    this->sumKernel = runtime.createShaderModule(srcSum, sizeof(srcSum));
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({

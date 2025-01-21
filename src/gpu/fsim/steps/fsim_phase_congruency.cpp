@@ -7,8 +7,12 @@
 
 #include <fsim.h>
 
+static uint32_t src[] =
+#include <fsim/fsim_phase_congruency.inc>
+;
+
 IQM::GPU::FSIMPhaseCongruency::FSIMPhaseCongruency(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_phase_congruency.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({

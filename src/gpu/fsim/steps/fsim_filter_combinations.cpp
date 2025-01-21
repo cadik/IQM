@@ -7,9 +7,17 @@
 
 #include <fsim.h>
 
+static uint32_t srcMultPack[] =
+#include <fsim/fsim_filter_combinations.inc>
+;
+
+static uint32_t srcSum[] =
+#include <fsim/fsim_filter_noise.inc>
+;
+
 IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &runtime) {
-    this->multPackKernel = runtime.createShaderModule("../shaders_out/fsim_filter_combinations.spv");
-    this->sumKernel = runtime.createShaderModule("../shaders_out/fsim_filter_noise.spv");
+    this->multPackKernel = runtime.createShaderModule(srcMultPack, sizeof(srcMultPack));
+    this->sumKernel = runtime.createShaderModule(srcSum, sizeof(srcSum));
 
     //custom layout for this pass
     this->multPackDescSetLayout = std::move(runtime.createDescLayout({
@@ -50,11 +58,6 @@ IQM::GPU::FSIMFilterCombinations::FSIMFilterCombinations(const VulkanRuntime &ru
 
 void IQM::GPU::FSIMFilterCombinations::combineFilters(const VulkanRuntime &runtime, const FSIMAngularFilter &angulars, const FSIMLogGabor &logGabor, const vk::raii::Buffer& fftImages, int width, int height) {
     this->prepareBufferStorage(runtime, angulars, logGabor, fftImages, width, height);
-
-    /*const vk::CommandBufferBeginInfo beginInfo = {
-        .flags = vk::CommandBufferUsageFlags{vk::CommandBufferUsageFlagBits::eOneTimeSubmit},
-    };
-    runtime._cmd_buffer->begin(beginInfo);*/
 
     runtime._cmd_buffer->bindPipeline(vk::PipelineBindPoint::eCompute, this->multPackPipeline);
     runtime._cmd_buffer->bindDescriptorSets(vk::PipelineBindPoint::eCompute, this->multPacklayout, 0, {this->multPackDescSet}, {});

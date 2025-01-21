@@ -6,13 +6,37 @@
 #include "flip.h"
 #include "viridis.h"
 
+static uint32_t srcInputConvert[] =
+#include <flip/srgb_to_ycxcz.inc>
+;
+
+static uint32_t srcFeatureFilterCreate[] =
+#include <flip/feature_filter.inc>
+;
+
+static uint32_t srcFeatureFilterNormalize[] =
+#include <flip/feature_filter_normalize.inc>
+;
+
+static uint32_t srcFeatureFilterHorizontal[] =
+#include <flip/feature_filter_horizontal.inc>
+;
+
+static uint32_t srcFeatureDetect[] =
+#include <flip/feature_detection.inc>
+;
+
+static uint32_t srcErrCombine[] =
+#include <flip/combine_error_maps.inc>
+;
+
 IQM::GPU::FLIP::FLIP(const VulkanRuntime &runtime): colorPipeline(runtime) {
-    this->inputConvertKernel = runtime.createShaderModule("../shaders_out/flip/srgb_to_ycxcz.spv");
-    this->featureFilterCreateKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter.spv");
-    this->featureFilterNormalizeKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter_normalize.spv");
-    this->featureFilterHorizontalKernel = runtime.createShaderModule("../shaders_out/flip/feature_filter_horizontal.spv");
-    this->featureDetectKernel = runtime.createShaderModule("../shaders_out/flip/feature_detection.spv");
-    this->errorCombineKernel = runtime.createShaderModule("../shaders_out/flip/combine_error_maps.spv");
+    this->inputConvertKernel = runtime.createShaderModule(srcInputConvert, sizeof(srcInputConvert));
+    this->featureFilterCreateKernel = runtime.createShaderModule(srcFeatureFilterCreate, sizeof(srcFeatureFilterCreate));
+    this->featureFilterNormalizeKernel = runtime.createShaderModule(srcFeatureFilterNormalize, sizeof(srcFeatureFilterNormalize));
+    this->featureFilterHorizontalKernel = runtime.createShaderModule(srcFeatureFilterHorizontal, sizeof(srcFeatureFilterHorizontal));
+    this->featureDetectKernel = runtime.createShaderModule(srcFeatureDetect, sizeof(srcFeatureDetect));
+    this->errorCombineKernel = runtime.createShaderModule(srcErrCombine, sizeof(srcErrCombine));
 
     this->inputConvertDescSetLayout = runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 2},

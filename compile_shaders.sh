@@ -14,6 +14,6 @@ for i in $files; do
   # remove suffix and prefix
   path=${i#shaders/}
   path=${path%.glsl}
-  # compile shaders
-  glslc "$i" -o "shaders_out/$path.spv"
+  # compile shaders to files which are then included
+  glslc "$i" -o "shaders_out/$path.inc" -mfmt=c
 done

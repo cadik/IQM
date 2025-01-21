@@ -7,8 +7,12 @@
 
 #include <fsim.h>
 
+static uint32_t src[] =
+#include <fsim/fsim_log_gabor.inc>
+;
+
 IQM::GPU::FSIMLogGabor::FSIMLogGabor(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_log_gabor.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     this->descSetLayout = std::move(runtime.createDescLayout({
         {vk::DescriptorType::eStorageImage, 1},

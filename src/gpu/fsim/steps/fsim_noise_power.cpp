@@ -10,6 +10,10 @@
 #include <execution>
 #include <algorithm>
 
+static uint32_t src[] =
+#include <fsim/fsim_pack_for_median.inc>
+;
+
 IQM::GPU::FSIMNoisePower::FSIMNoisePower(const VulkanRuntime &runtime) {
     auto [buf, mem] = runtime.createBuffer(
         2 * FSIM_ORIENTATIONS * sizeof(float),
@@ -20,7 +24,7 @@ IQM::GPU::FSIMNoisePower::FSIMNoisePower(const VulkanRuntime &runtime) {
     this->noisePowers = std::move(buf);
     this->noisePowersMemory = std::move(mem);
 
-    this->kernel = runtime.createShaderModule("../shaders_out/fsim_pack_for_median.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
 
     //custom layout for this pass
     this->descSetLayout = std::move(runtime.createDescLayout({

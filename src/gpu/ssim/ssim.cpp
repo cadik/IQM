@@ -1,14 +1,26 @@
 /*
  * Image Quality Metrics
- * Petr Volf - 2024
+ * Petr Volf - 2025
  */
 
 #include "ssim.h"
 
+static uint32_t src[] =
+#include <ssim/ssim.inc>
+;
+
+static uint32_t srcLumapack[] =
+#include <ssim/ssim_lumapack.inc>
+;
+
+static uint32_t srcGaussInput[] =
+#include <ssim/ssim_gaussinput.inc>
+;
+
 IQM::GPU::SSIM::SSIM(const VulkanRuntime &runtime) {
-    this->kernel = runtime.createShaderModule("../shaders_out/ssim.spv");
-    this->kernelLumapack = runtime.createShaderModule("../shaders_out/ssim_lumapack.spv");
-    this->kernelGaussInput = runtime.createShaderModule("../shaders_out/ssim_gaussinput.spv");
+    this->kernel = runtime.createShaderModule(src, sizeof(src));
+    this->kernelLumapack = runtime.createShaderModule(srcLumapack, sizeof(srcLumapack));
+    this->kernelGaussInput = runtime.createShaderModule(srcGaussInput, sizeof(srcGaussInput));
 
     const std::vector layouts_3 = {
         *runtime._descLayoutThreeImage
