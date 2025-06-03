@@ -6,28 +6,29 @@
 #version 450
 #pragma shader_stage(compute)
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 1024, local_size_y = 1) in;
 
-layout(set = 0, binding = 0, r32f) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, rgba32f) uniform readonly image2D color_map;
-layout(set = 0, binding = 2, rgba32f) uniform writeonly image2D output_img;
+layout(std430, set = 0, binding = 0) buffer InBuf {
+    float data[];
+} inData[2];
+layout(std430, set = 0, binding = 1) buffer OutBuf {
+    float data[];
+} outData;
+
+layout( push_constant ) uniform constants {
+    uint size;
+} push_consts;
 
 void main() {
-    uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-    uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-    ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(input_img[0]);
-
-    if (x >= size.x || y >= size.y) {
+    uint pixel = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    if (pixel >= push_consts.size) {
         return;
     }
 
-    float deltaEf = imageLoad(input_img[0], pos).x;
-    float deltaEc = imageLoad(input_img[1], pos).x;
+    float deltaEf = inData[0].data[pixel];
+    float deltaEc = inData[1].data[pixel];
 
     float value = pow(deltaEc, 1.0 - deltaEf);
 
-    vec4 color = imageLoad(color_map, ivec2(int(floor(value * 255.0)), 0));
-
-    imageStore(output_img, pos, color);
+    outData.data[pixel] = value;
 }

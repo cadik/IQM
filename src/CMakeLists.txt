@@ -1,0 +1,7 @@
+add_subdirectory(base)
+add_subdirectory(ssim)
+add_subdirectory(svd)
+add_subdirectory(fsim)
+add_subdirectory(flip)
+add_subdirectory(psnr)
+add_subdirectory(lpips)

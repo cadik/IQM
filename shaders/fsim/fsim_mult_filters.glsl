@@ -6,9 +6,7 @@
 #version 450
 #pragma shader_stage(compute)
 
-#define ORIENTATIONS 4
-#define SCALES 4
-#define OxS 16
+#include "fsim_shared.glsl"
 
 layout (local_size_x = 128, local_size_y = 1) in;
 
@@ -27,7 +25,7 @@ void main() {
     uint x = (gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x) * 2;
     uint z = gl_WorkGroupID.z;
 
-    if (x >= push_consts.size) {
+    if (x/2 >= push_consts.size) {
         return;
     }
 

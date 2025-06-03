@@ -6,9 +6,7 @@
 #version 450
 #pragma shader_stage(compute)
 
-#define ORIENTATIONS 4
-#define SCALES 4
-#define OxS 16
+#include "fsim_shared.glsl"
 
 layout (local_size_x = 256, local_size_y = 1) in;
 
@@ -22,6 +20,7 @@ layout(std430, set = 0, binding = 1) buffer writeonly OutFFTBuf {
 
 layout( push_constant ) uniform constants {
     uint size;
+    uint index;
 } push_consts;
 
 void main() {
@@ -31,16 +30,11 @@ void main() {
         return;
     }
 
-    for (uint img = 0; img < 2; img++) {
-        for (uint o = 0; o < ORIENTATIONS; o++) {
-            uint index = img * ORIENTATIONS + o;
-            uint base = 2 * push_consts.size * (OxS + index * SCALES);
+    uint base = 2 * push_consts.size * (OxS + push_consts.index * SCALES);
 
-            float real = inData[base + 2 * x];
-            float imag = inData[base + 2 * x + 1];
+    float real = inData[base + 2 * x];
+    float imag = inData[base + 2 * x + 1];
 
-            float value = real * real + imag * imag;
-            outData[x + push_consts.size * index] = value;
-        }
-    }
+    float value = real * real + imag * imag;
+    outData[x] = value;
 }

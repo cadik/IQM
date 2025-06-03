@@ -9,7 +9,9 @@
 layout (local_size_x = 16, local_size_y = 16) in;
 
 layout(set = 0, binding = 0, rgba8) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, rgba32f) uniform writeonly image2D output_img[2];
+layout(std430, set = 0, binding = 1) buffer OutBuf {
+    float data[];
+} outData[2];
 
 #define SRGB_LIMIT 0.04045
 
@@ -44,8 +46,9 @@ void main() {
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
     uint z = gl_WorkGroupID.z;
     ivec2 pos = ivec2(x, y);
+    ivec2 size = imageSize(input_img[z]);
 
-    if (x >= imageSize(input_img[z]).x || y >= imageSize(input_img[z]).y) {
+    if (x >= size.x || y >= size.y) {
         return;
     }
 
@@ -53,5 +56,8 @@ void main() {
 
     vec3 transformedColor = xyz_to_ycxcz(srgb_to_linear_rgb(inputColor) * RGB_TO_XYZ);
 
-    imageStore(output_img[z], pos, vec4(transformedColor, 1.0));
+    uint index = (x + size.x * y) * 3;
+    outData[z].data[index] = transformedColor.x;
+    outData[z].data[index + 1] = transformedColor.y;
+    outData[z].data[index + 2] = transformedColor.z;
 }

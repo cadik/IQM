@@ -6,10 +6,18 @@
 #version 450
 #pragma shader_stage(compute)
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 1024, local_size_y = 1) in;
 
-layout(set = 0, binding = 0, rgba32f) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, r32f) uniform writeonly image2D output_img;
+layout(std430, set = 0, binding = 0) buffer InBuf {
+    float data[];
+} inData[2];
+layout(std430, set = 0, binding = 1) buffer OutBuf {
+    float data[];
+} outData;
+
+layout( push_constant ) uniform constants {
+    uint size;
+} push_consts;
 
 const mat3 RGB_TO_XYZ = mat3(
     float(10135552) / 24577794, float(8788810) / 24577794, float(4435075) / 24577794,
@@ -55,19 +63,15 @@ float remapError(float delta, float cmax) {
 }
 
 void main() {
-    uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-    uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-    ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(input_img[0]);
-
-    if (x >= size.x || y >= size.y) {
+    uint pixel = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    if (pixel >= push_consts.size) {
         return;
     }
 
     float qc = 0.7;
 
-    vec3 inp = imageLoad(input_img[0], pos).xyz;
-    vec3 ref = imageLoad(input_img[1], pos).xyz;
+    vec3 inp = vec3(inData[0].data[pixel * 3], inData[0].data[pixel * 3 + 1], inData[0].data[pixel * 3 + 2]);
+    vec3 ref = vec3(inData[1].data[pixel * 3], inData[1].data[pixel * 3 + 1], inData[1].data[pixel * 3 + 2]);
 
     float deltaEhyab = hyABDistance(inp, ref);
     vec3 huntAdjGreen = linearRgbToLab(vec3(0.0, 1.0, 0.0));
@@ -81,5 +85,5 @@ void main() {
     float cmax = pow(hyABDistance(huntAdjGreen, huntAdjBlue), qc);
     float deltaEc = remapError(pow(deltaEhyab, qc), cmax);
 
-    imageStore(output_img, pos, vec4(deltaEc));
+    outData.data[pixel] = deltaEc;
 }

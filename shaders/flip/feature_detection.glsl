@@ -6,22 +6,33 @@
 #version 450
 #pragma shader_stage(compute)
 
-layout (local_size_x = 16, local_size_y = 16) in;
+layout (local_size_x = 1024, local_size_y = 1) in;
 
-layout(set = 0, binding = 0, rgba32f) uniform readonly image2D input_img[2];
-layout(set = 0, binding = 1, r32f) uniform writeonly image2D output_img;
+layout(std430, set = 0, binding = 0) buffer InBuf {
+    float data[];
+} inData[2];
+layout(std430, set = 0, binding = 1) buffer OutBuf {
+    float data[];
+} outData;
+
 layout(set = 0, binding = 2, rgba32f) uniform readonly image2D filter_img;
 
-void main() {
-    uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
-    uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-    ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(input_img[0]);
-    ivec2 filterSize = imageSize(filter_img);
+layout( push_constant ) uniform constants {
+    uint size;
+    uint width;
+    uint height;
+} push_consts;
 
-    if (x >= size.x || y >= size.y) {
+void main() {
+    uint pixel = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
+    if (pixel >= push_consts.size) {
         return;
     }
+
+    uint x = pixel % push_consts.width;
+    uint y = pixel / push_consts.width;
+    ivec2 pos = ivec2(x, y);
+    ivec2 filterSize = imageSize(filter_img);
 
     float qf = 0.5;
 
@@ -31,11 +42,13 @@ void main() {
     vec2 ddRef = vec2(0.0);
 
     for (int k = -filterSize.x / 2; k <= filterSize.x/2; k++) {
-        uint actualY = uint(clamp(int(y) - k, 0, size.y - 1));
+        uint actualY = uint(clamp(int(y) - k, 0, int(push_consts.height) - 1));
         uint filterY = k + filterSize.x / 2;
 
-        vec3 valueInput = imageLoad(input_img[0], ivec2(x, actualY)).xyz;
-        vec3 valueRef = imageLoad(input_img[1], ivec2(x, actualY)).xyz;
+        uint index = (x + actualY * push_consts.width) * 3;
+
+        vec3 valueInput = vec3(inData[0].data[index], inData[0].data[index + 1], inData[0].data[index + 2]);
+        vec3 valueRef = vec3(inData[1].data[index], inData[1].data[index + 1], inData[1].data[index + 2]);
 
         vec3 filterWeights = imageLoad(filter_img, ivec2(filterY, 0)).xyz;
 
@@ -52,5 +65,5 @@ void main() {
     float diff = max(edgeDiff, pointDiff);
     float deltaEf = pow(scaler * diff, qf);
 
-    imageStore(output_img, pos, vec4(deltaEf));
+    outData.data[pixel] = deltaEf;
 }

@@ -6,19 +6,21 @@
 #version 450
 #pragma shader_stage(compute)
 
-#define SCALES 4
+#include "fsim_shared.glsl"
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
-layout(set = 0, binding = 0, r32f) uniform readonly image2D lowpass_filter;
-layout(set = 0, binding = 1, r32f) uniform writeonly image2D out_filter[SCALES];
+layout(set = 0, binding = 0, r32f) uniform writeonly image2D out_filter[SCALES];
+
+const float cutoff = 0.45;
+const float order = 15.0;
 
 void main() {
     uint x = gl_WorkGroupID.x * gl_WorkGroupSize.x + gl_LocalInvocationID.x;
     uint y = gl_WorkGroupID.y * gl_WorkGroupSize.y + gl_LocalInvocationID.y;
     uint z = gl_WorkGroupID.z;
     ivec2 pos = ivec2(x, y);
-    ivec2 size = imageSize(lowpass_filter);
+    ivec2 size = imageSize(out_filter[z]);
 
     if (x >= size.x || y >= size.y) {
         return;
@@ -40,7 +42,8 @@ void main() {
     float frequency = 1.0 / wavelength;
     float value = exp(-pow(log(radius/frequency), 2.0) / (2.0 * pow(log(sigmaOnf), 2.0)));
 
-    float lowpass = imageLoad(lowpass_filter, pos).x;
+    float lowpass = 1.0 / (1.0 + pow(radius / cutoff, 2.0 * order));
+
     imageStore(out_filter[z], pos, vec4(value * lowpass));
 
     if(x == 0 && y == 0) {

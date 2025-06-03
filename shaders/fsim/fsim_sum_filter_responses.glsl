@@ -6,9 +6,7 @@
 #version 450
 #pragma shader_stage(compute)
 
-#define ORIENTATIONS 4
-#define SCALES 4
-#define OxS 16
+#include "fsim_shared.glsl"
 
 layout (local_size_x = 16, local_size_y = 16) in;
 
