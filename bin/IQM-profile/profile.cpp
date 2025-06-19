@@ -48,7 +48,7 @@ void printHelp() {
     std::cout << "IQM-profile - Application for profiling methods in IQM.\n"
     << "Usage: IQM-profile --method METHOD --input INPUT --ref REF [--iterations I]\n\n"
     << "Arguments:\n"
-    << "    --method <METHOD>    : selects method to compute, one of SSIM, FSIM, FLIP, PSNR\n"
+    << "    --method <METHOD>    : selects method to compute, one of SSIM, FSIM, FLIP, PSNR, LPIPS\n"
     << "    --input <INPUT>      : path to tested image\n"
     << "    --ref <REF>          : path to reference image\n"
     << "    -i, --iterations <I> : number of iterations to compute, unlimited if not set\n"

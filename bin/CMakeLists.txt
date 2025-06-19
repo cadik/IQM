@@ -16,6 +16,16 @@ target_compile_options(IQM-profile PRIVATE "-Wall;-Wextra")
 find_package(glfw3)
 target_link_libraries(IQM-profile glfw)
 
+target_link_libraries(IQM
+        SPIRV-Tools
+        SPIRV-Tools-opt
+)
+
+target_link_libraries(IQM-profile
+        SPIRV-Tools
+        SPIRV-Tools-opt
+)
+
 if (ENABLE_RENDERDOC)
     target_compile_definitions(IQM PRIVATE -DENABLE_RENDERDOC)
     target_compile_definitions(IQM-profile PRIVATE -DENABLE_RENDERDOC)

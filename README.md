@@ -1,5 +1,5 @@
 # Image Quality Metrics
-This library provides Vulkan implementations of SSIM, FSIM, FLIP, PSNR
+This library provides Vulkan implementations of SSIM, FSIM, FLIP, PSNR, LPIPS
 image quality metrics.
 
 ## Prerequisites
@@ -14,7 +14,7 @@ IQM --method METHOD --input INPUT --ref REF [--output OUTPUT]
 ```
 
 ### Arguments:
-- `--method <METHOD>` : selects method to compute, one of SSIM, FSIM, FLIP, PSNR
+- `--method <METHOD>` : selects method to compute, one of SSIM, FSIM, FLIP, PSNR, LPIPS
 - `--input <INPUT>` : path to tested image
 - `--ref <REF>` : path to reference image
 - `--output <OUTPUT>` : path to output image, optional
@@ -31,10 +31,26 @@ IQM --method METHOD --input INPUT --ref REF [--output OUTPUT]
 - `--flip-distance <DISTANCE>` : Distance to display in meters
 
 ## Library Usage
-TODO
+Example library usage can be found in `/bin/shared/wrappers` folder for each implemented method.
+Simplified it can look like this:
 
-## Implemented methods
-### PSNR
-### SSIM
-### FSIM
-### FLIP
+```c++
+IQM::FLIP flip(device); // init method with `vk::raii::Device`
+
+// populate input structure with Vulkan objects and arguments to method
+auto flipInput = IQM::FLIPInput {
+    .args = flipArgs,
+    ....
+};
+
+commandBuffer->begin();
+flip.computeMetric(flipInput);
+commandBuffer->end();
+```
+
+## Compilation
+- needs properly configured Vulkan SDK (Tested on Ubuntu 25.04), or packages from system (Arch Linux)
+  - in case of bad setup, link errors or missing includes will appear
+- for FSIM, git submodule with `VkFFT` must be fetched
+- before C++ compilation compile shaders by `./compile_shaders.sh`
+- after compilation copy `lpips.dat` next to executable
